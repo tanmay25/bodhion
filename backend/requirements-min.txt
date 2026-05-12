@@ -1,0 +1,133 @@
+﻿# =============================================================================
+# requirements-min.txt — Minimal dependency list for Bodhion backend
+#
+# Purpose:  Lightweight install for development, CI, or minimal Docker images.
+#           Excludes ML models, OCR, cloud SDKs, vector DBs, and media tools.
+#
+# Install:  pip install -r requirements-min.txt
+# Full:     Use requirements.txt for production with all features enabled.
+# Status:   WIP — use as a reference to build a minimal Docker image.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Web Framework
+# -----------------------------------------------------------------------------
+fastapi==0.128.5                # ASGI web framework — routing, dependency injection, OpenAPI docs
+uvicorn[standard]==0.40.0       # ASGI server; [standard] adds websocket + reload support
+pydantic==2.12.5                # Data validation and settings management via Python type hints
+python-multipart==0.0.22        # Multipart form / file upload parsing for FastAPI
+itsdangerous==2.2.0             # Cryptographic signing for sessions and tokens
+python-dotenv==1.0.1            # Load .env and .env.local into os.environ at startup
+
+
+# -----------------------------------------------------------------------------
+# Authentication & Security
+# -----------------------------------------------------------------------------
+python-socketio==5.16.1         # WebSocket / Socket.IO real-time event layer
+python-jose==3.5.0              # JOSE (JWT, JWS, JWE) implementation for token handling
+cryptography                    # Low-level cryptographic primitives (RSA, AES, etc.)
+bcrypt==5.0.0                   # Bcrypt password hashing
+argon2-cffi==25.1.0             # Argon2 password hashing (recommended over bcrypt for new code)
+PyJWT[crypto]==2.11.0           # JWT encode/decode; [crypto] adds RS256/ES256 support
+authlib==1.6.7                  # OAuth 2.0 / OpenID Connect client and server library
+
+
+# -----------------------------------------------------------------------------
+# HTTP & Async I/O
+# -----------------------------------------------------------------------------
+requests==2.32.5                # Synchronous HTTP client (used in non-async contexts)
+aiohttp==3.13.2                 # Async HTTP client/server; DO NOT update to 3.13.3 — broken release
+async-timeout                   # Timeout helper for asyncio (backport for Python < 3.11)
+aiocache                        # Async caching layer (in-memory, Redis, memcached backends)
+aiofiles                        # Async file I/O for non-blocking reads/writes
+starlette-compress==1.7.0       # Gzip/Brotli response compression middleware for Starlette/FastAPI
+Brotli==1.1.0                   # Brotli compression codec (used by starlette-compress and httpx)
+httpx[socks,http2,zstd,cli,brotli]==0.28.1  # Modern async HTTP client; extras add SOCKS proxy, HTTP/2, zstd, CLI, Brotli
+starsessions[redis]==2.2.1      # Server-side session middleware for Starlette; [redis] backend
+
+
+# -----------------------------------------------------------------------------
+# Databases & ORM
+# -----------------------------------------------------------------------------
+sqlalchemy==2.0.46              # Primary ORM — async-capable, used for all relational DB access
+alembic==1.18.3                 # Database schema migration tool built on SQLAlchemy
+peewee==3.19.0                  # Lightweight ORM used for simpler/legacy models
+peewee-migrate==1.14.3          # Schema migration support for Peewee models
+
+
+# -----------------------------------------------------------------------------
+# Real-time Collaboration & Caching
+# -----------------------------------------------------------------------------
+pycrdt==0.12.46                 # CRDT (Conflict-free Replicated Data Type) for collaborative editing
+redis                           # Redis client — used for caching, pub/sub, and session storage
+
+
+# -----------------------------------------------------------------------------
+# Task Scheduling & Sandboxing
+# -----------------------------------------------------------------------------
+APScheduler==3.11.2             # In-process job scheduler (cron-style and interval tasks)
+RestrictedPython==8.1           # Safe Python code execution sandbox (used for user-submitted code)
+
+
+# -----------------------------------------------------------------------------
+# Logging & ASGI Utilities
+# -----------------------------------------------------------------------------
+loguru==0.7.3                   # Structured, zero-config logging with rotation and color output
+asgiref==3.11.1                 # ASGI utilities — sync_to_async, async_to_sync adapters
+
+
+# -----------------------------------------------------------------------------
+# AI — Core (minimal set)
+# -----------------------------------------------------------------------------
+mcp==1.26.0                     # Model Context Protocol — tool/plugin interface for LLMs
+openai                          # OpenAI Python SDK (GPT-4, Whisper, DALL·E, Embeddings)
+
+
+# -----------------------------------------------------------------------------
+# AI — LangChain Ecosystem
+# -----------------------------------------------------------------------------
+langchain==1.2.9                # Core LangChain framework — chains, agents, memory abstractions
+langchain-community==0.4.1      # Community integrations (loaders, tools, vector stores)
+langchain-classic==1.0.1        # Stable legacy LangChain components
+langchain-text-splitters==1.1.0 # Document chunking strategies for RAG pipelines
+
+
+# -----------------------------------------------------------------------------
+# Vector Store (minimal)
+# -----------------------------------------------------------------------------
+fake-useragent==2.2.0           # Rotates User-Agent headers for web scraping / loader requests
+chromadb==1.4.1                 # Embedded vector database for local RAG workflows
+
+
+# -----------------------------------------------------------------------------
+# Text Processing (minimal)
+# -----------------------------------------------------------------------------
+chardet==5.2.0                  # Charset/encoding auto-detection
+
+
+# -----------------------------------------------------------------------------
+# Code Formatting & Audio
+# -----------------------------------------------------------------------------
+black==26.1.0                   # Python code formatter (used server-side for code block formatting)
+pydub                           # Audio manipulation — trim, convert, merge (requires ffmpeg)
+
+
+# =============================================================================
+# Excluded from this minimal install (available in requirements.txt):
+#
+#   ML/Embeddings:   transformers, sentence-transformers, accelerate, onnxruntime,
+#                    faster-whisper, einops, pyarrow, sentencepiece, tiktoken
+#   Vision/OCR:      pillow, opencv-python-headless, rapidocr-onnxruntime
+#   Document parsing: pypdf, fpdf2, docx2txt, python-pptx, unstructured, nltk,
+#                     pandas, openpyxl, xlrd, pyxlsb, pypandoc, msoffcrypto-tool
+#   Vector DBs:      weaviate-client, opensearch-py, pymilvus, qdrant-client,
+#                    elasticsearch, pinecone, colbert-ai, pgvector
+#   Cloud:           azure-*, google-cloud-*, google-api-python-client, boto3
+#   Databases:       pymongo, psycopg2-binary, PyMySQL, oracledb
+#   Web/Media:       playwright, av, pytube, youtube-transcript-api, ddgs, firecrawl-py
+#   Auth/Directory:  ldap3, authlib (full OAuth flows)
+#   Observability:   opentelemetry-*
+#   Display:         rich
+#   Testing:         pytest, pytest-docker, docker
+# =============================================================================

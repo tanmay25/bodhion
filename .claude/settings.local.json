@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(find /c/Users/Tanmay.Mondal/MyWorkSpace/myproject/mti-mindai-main/src -name *i18n* -o -name *lang* -o -name *locale*)"
+    ]
+  }
+}

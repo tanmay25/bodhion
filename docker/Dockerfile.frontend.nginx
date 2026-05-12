@@ -1,0 +1,178 @@
+# docker/Dockerfile.frontend.nginx
+# Next.js frontend — multi-stage: Node build → nginx:alpine runtime.
+# Architecture (standalone + nginx):
+#   nginx:80  ──  static assets served directly by nginx (fast, gzip, cache headers)
+#              ──  /api/*, /ollama/*, /openai/*, /ws/*, /oauth/*  proxied to backend:8080
+#              ──  all other requests proxied to Next.js server (node server.js) on 127.0.0.1:3000
+#
+# This is the RECOMMENDED production image used by docker/docker-compose.yml.
+#
+# Build context: project root (mti-mindai-main/)
+# Build:   docker build -f docker/Dockerfile.frontend.nginx -t bodhion_frontend_nginx .
+
+# ── Stage 1: Node build ───────────────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# ── Stage 2: nginx + Node runtime ────────────────────────────────────────────
+FROM nginx:alpine AS runner
+
+# Install Node.js (LTS) and dumb-init into the nginx image.
+# dumb-init handles PID 1 signal forwarding correctly so both nginx and
+# the Node.js server shut down cleanly on docker stop.
+RUN apk add --no-cache nodejs npm dumb-init
+
+WORKDIR /app
+
+# ── Copy Next.js standalone bundle ──
+RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+
+COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+
+# ── nginx config (inline) ────────────────────────────────────────────────────
+# Writes a minimal nginx.conf that:
+#   - serves _next/static/* directly from disk with long-lived cache headers
+#   - proxies /api, /ollama, /openai, /ws, /oauth to the backend service
+#   - proxies everything else to the Next.js node server on 127.0.0.1:3000
+#   - enables gzip for text content
+RUN cat > /etc/nginx/nginx.conf <<'NGINX_CONF'
+user  nginx;
+worker_processes  auto;
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    # ── Gzip ────────────────────────────────────────────────────────────────
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json
+               application/javascript application/xml+rss
+               application/atom+xml image/svg+xml;
+
+    # ── Upstream: Next.js node server ───────────────────────────────────────
+    upstream nextjs {
+        server 127.0.0.1:3000;
+    }
+
+    # ── Upstream: FastAPI backend (resolved via Docker network) ─────────────
+    # "backend" is the compose service name on the bodhion-net network.
+    upstream backend {
+        server backend:8080;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        # ── Static assets — long cache, served from disk ─────────────────
+        location /_next/static/ {
+            alias /app/.next/static/;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            access_log off;
+        }
+
+        # ── Public directory (favicon, images, manifest) ─────────────────
+        location /static/ {
+            alias /app/public/static/;
+            expires 30d;
+            add_header Cache-Control "public";
+            access_log off;
+        }
+
+        # ── Backend API routes ────────────────────────────────────────────
+        location ~ ^/(api|ollama|openai|oauth)/ {
+            proxy_pass         http://backend;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            # Required for SSE (streaming responses)
+            proxy_buffering    off;
+            proxy_cache        off;
+        }
+
+        # ── WebSocket upgrade for /ws/* ───────────────────────────────────
+        location /ws/ {
+            proxy_pass         http://backend;
+            proxy_http_version 1.1;
+            proxy_set_header   Upgrade    $http_upgrade;
+            proxy_set_header   Connection "upgrade";
+            proxy_set_header   Host       $host;
+            proxy_read_timeout 86400s;
+        }
+
+        # ── Everything else → Next.js ─────────────────────────────────────
+        location / {
+            proxy_pass         http://nextjs;
+            proxy_http_version 1.1;
+            proxy_set_header   Upgrade    $http_upgrade;
+            proxy_set_header   Connection "upgrade";
+            proxy_set_header   Host       $host;
+            proxy_set_header   X-Real-IP  $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+            proxy_read_timeout 120s;
+        }
+    }
+}
+NGINX_CONF
+
+# ── Entrypoint script ─────────────────────────────────────────────────────────
+# Launches node server.js (Next.js) in background, then nginx in foreground.
+# dumb-init ensures SIGTERM propagates to both child processes.
+RUN cat > /docker-entrypoint-custom.sh <<'ENTRYPOINT'
+#!/bin/sh
+set -e
+
+# Start the Next.js server in the background
+NODE_ENV=production node /app/server.js &
+NEXT_PID=$!
+
+# Give Next.js a moment to bind port 3000 before nginx starts accepting traffic
+sleep 2
+
+# Start nginx in the foreground (keeps the container alive)
+exec nginx -g "daemon off;"
+ENTRYPOINT
+
+RUN chmod +x /docker-entrypoint-custom.sh
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD wget -qO- http://localhost:80/ || exit 1
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/docker-entrypoint-custom.sh"]

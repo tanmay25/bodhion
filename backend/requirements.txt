@@ -1,0 +1,263 @@
+﻿# =============================================================================
+# requirements.txt — Full dependency list for Bodhion backend
+#
+# Install:  pip install -r requirements.txt
+# Note:     For a minimal/lightweight install (no ML, no cloud, no OCR),
+#           use requirements-min.txt instead.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Web Framework
+# -----------------------------------------------------------------------------
+fastapi==0.128.5                # ASGI web framework — routing, dependency injection, OpenAPI docs
+uvicorn[standard]==0.40.0       # ASGI server; [standard] adds websocket + reload support
+pydantic==2.12.5                # Data validation and settings management via Python type hints
+python-multipart==0.0.22        # Multipart form / file upload parsing for FastAPI
+itsdangerous==2.2.0             # Cryptographic signing for sessions and tokens
+python-dotenv==1.0.1            # Load .env and .env.local into os.environ at startup
+
+
+# -----------------------------------------------------------------------------
+# Authentication & Security
+# -----------------------------------------------------------------------------
+python-socketio==5.16.1         # WebSocket / Socket.IO real-time event layer
+python-jose==3.5.0              # JOSE (JWT, JWS, JWE) implementation for token handling
+cryptography                    # Low-level cryptographic primitives (RSA, AES, etc.)
+bcrypt==5.0.0                   # Bcrypt password hashing
+argon2-cffi==25.1.0             # Argon2 password hashing (recommended over bcrypt for new code)
+PyJWT[crypto]==2.11.0           # JWT encode/decode; [crypto] adds RS256/ES256 support
+authlib==1.6.7                  # OAuth 2.0 / OpenID Connect client and server library
+
+
+# -----------------------------------------------------------------------------
+# HTTP & Async I/O
+# -----------------------------------------------------------------------------
+requests==2.32.5                # Synchronous HTTP client (used in non-async contexts)
+aiohttp==3.13.2                 # Async HTTP client/server; DO NOT update to 3.13.3 — broken release
+async-timeout                   # Timeout helper for asyncio (backport for Python < 3.11)
+aiocache                        # Async caching layer (in-memory, Redis, memcached backends)
+aiofiles                        # Async file I/O for non-blocking reads/writes
+starlette-compress==1.7.0       # Gzip/Brotli response compression middleware for Starlette/FastAPI
+Brotli==1.1.0                   # Brotli compression codec (used by starlette-compress and httpx)
+httpx[socks,http2,zstd,cli,brotli]==0.28.1  # Modern async HTTP client; extras add SOCKS proxy, HTTP/2, zstd, CLI, Brotli
+PyYAML>=6.0                     # YAML parser used by hermes_skills.py to read SKILL.md frontmatter
+starsessions[redis]==2.2.1      # Server-side session middleware for Starlette; [redis] backend
+python-mimeparse==2.0.0         # RFC 2616 MIME type parsing for content negotiation
+
+
+# -----------------------------------------------------------------------------
+# Databases & ORM
+# -----------------------------------------------------------------------------
+sqlalchemy==2.0.46              # Primary ORM — async-capable, used for all relational DB access
+alembic==1.18.3                 # Database schema migration tool built on SQLAlchemy
+peewee==3.19.0                  # Lightweight ORM used for simpler/legacy models
+peewee-migrate==1.14.3          # Schema migration support for Peewee models
+
+
+# -----------------------------------------------------------------------------
+# Real-time Collaboration & Caching
+# -----------------------------------------------------------------------------
+pycrdt==0.12.46                 # CRDT (Conflict-free Replicated Data Type) for collaborative editing
+redis                           # Redis client — used for caching, pub/sub, and session storage
+
+
+# -----------------------------------------------------------------------------
+# Task Scheduling & Sandboxing
+# -----------------------------------------------------------------------------
+APScheduler==3.11.2             # In-process job scheduler (cron-style and interval tasks)
+RestrictedPython==8.1           # Safe Python code execution sandbox (used for user-submitted code)
+pytz==2025.2                    # IANA timezone database for timezone-aware datetime handling
+
+
+# -----------------------------------------------------------------------------
+# Logging & ASGI Utilities
+# -----------------------------------------------------------------------------
+loguru==0.7.3                   # Structured, zero-config logging with rotation and color output
+asgiref==3.11.1                 # ASGI utilities — sync_to_async, async_to_sync adapters
+
+
+# -----------------------------------------------------------------------------
+# AI — Core
+# -----------------------------------------------------------------------------
+tiktoken                        # OpenAI's fast BPE tokenizer — used for token counting
+mcp==1.26.0                     # Model Context Protocol — tool/plugin interface for LLMs
+
+openai                          # OpenAI Python SDK (GPT-4, Whisper, DALL·E, Embeddings)
+anthropic                       # Anthropic Python SDK (Claude models)
+google-genai==1.62.0            # Google Gemini API client
+
+
+# -----------------------------------------------------------------------------
+# AI — LangChain Ecosystem
+# -----------------------------------------------------------------------------
+langchain==1.2.9                # Core LangChain framework — chains, agents, memory abstractions
+langchain-community==0.4.1      # Community integrations (loaders, tools, vector stores)
+langchain-classic==1.0.1        # Stable legacy LangChain components
+langchain-text-splitters==1.1.0 # Document chunking strategies for RAG pipelines
+
+
+# -----------------------------------------------------------------------------
+# Vector Stores & Embeddings
+# -----------------------------------------------------------------------------
+fake-useragent==2.2.0           # Rotates User-Agent headers for web scraping / loader requests
+chromadb==1.4.1                 # Embedded vector database for local RAG workflows
+weaviate-client==4.19.2         # Weaviate vector search client
+opensearch-py==3.1.0            # OpenSearch / Elasticsearch-compatible vector search client
+
+
+# -----------------------------------------------------------------------------
+# Machine Learning & Embeddings
+# -----------------------------------------------------------------------------
+transformers==5.1.0             # HuggingFace Transformers — model loading, tokenizers, pipelines
+sentence-transformers==5.2.2    # Sentence / paragraph embedding models (SBERT family)
+accelerate                      # HuggingFace Accelerate — mixed precision, multi-GPU training/inference
+pyarrow==20.0.0                 # Columnar data format; pinned to v20 for RPi compatibility (#15897)
+einops==0.8.2                   # Tensor manipulation DSL — used by vision and attention models
+
+
+# -----------------------------------------------------------------------------
+# Document Parsing & Text Processing
+# -----------------------------------------------------------------------------
+ftfy==6.3.1                     # Fixes mojibake and Unicode encoding issues in text
+chardet==5.2.0                  # Charset/encoding auto-detection
+pypdf==6.7.0                    # Pure-Python PDF reader — text and metadata extraction
+pymupdf>=1.24.0                 # PyMuPDF (fitz) — layout-aware PDF text/image extraction (bodhion-native-extractor)
+pdfplumber>=0.11.0              # Precise PDF table detection and cell extraction (bodhion-native-extractor)
+pytesseract>=0.3.10             # Tesseract OCR wrapper — requires Tesseract binary in PATH (bodhion-native-extractor)
+fpdf2==2.8.5                    # PDF generation library
+pymdown-extensions==10.20.1     # Extended Markdown syntax (superfences, tasklists, etc.)
+docx2txt==0.9                   # Extracts plain text from .docx Word documents
+python-pptx==1.0.2              # Read/write PowerPoint .pptx files
+unstructured==0.18.31           # Universal document parser (PDF, DOCX, HTML, email, etc.)
+msoffcrypto-tool==6.0.0         # Decrypt password-protected MS Office files
+nltk==3.9.2                     # Natural Language Toolkit — tokenization, stemming, NER
+Markdown==3.10.1                # Python Markdown renderer
+pypandoc==1.16.2                # Pandoc wrapper — convert between document formats
+pandas==3.0.0                   # DataFrame library for tabular data processing
+openpyxl==3.1.5                 # Read/write Excel .xlsx files
+pyxlsb==1.0.10                  # Read Excel .xlsb (binary) files
+xlrd==2.0.2                     # Read legacy Excel .xls files
+validators==0.35.0              # URL, email, IP, and other value validators
+psutil                          # System / process metrics (CPU, RAM, disk)
+sentencepiece                   # Subword tokenizer used by many HuggingFace models
+soundfile==0.13.1               # Read/write audio files (WAV, FLAC, OGG) via libsndfile
+
+
+# -----------------------------------------------------------------------------
+# Vision & OCR
+# -----------------------------------------------------------------------------
+pillow==12.1.0                  # PIL image processing — resize, convert, thumbnail
+opencv-python-headless==4.13.0.92  # OpenCV without GUI — image decoding and preprocessing
+rapidocr-onnxruntime==1.4.4     # Fast OCR engine using ONNX Runtime (no GPU required)
+rank-bm25==0.2.2                # BM25 full-text ranking for hybrid search
+
+
+# -----------------------------------------------------------------------------
+# Inference Runtimes
+# -----------------------------------------------------------------------------
+onnxruntime==1.24.1             # Cross-platform ONNX model inference engine
+faster-whisper==1.2.1           # Fast Whisper speech-to-text via CTranslate2
+
+
+# -----------------------------------------------------------------------------
+# Code Formatting & Utilities
+# -----------------------------------------------------------------------------
+black==26.1.0                   # Python code formatter (used server-side for code block formatting)
+youtube-transcript-api==1.2.4   # Fetch YouTube video transcripts without the YouTube API
+pytube==15.0.0                  # YouTube video/audio downloader
+
+
+# -----------------------------------------------------------------------------
+# Audio & Web Search
+# -----------------------------------------------------------------------------
+pydub                           # Audio manipulation — trim, convert, merge (requires ffmpeg)
+ddgs==9.10.0                    # DuckDuckGo search API client for web search tool
+
+
+# -----------------------------------------------------------------------------
+# Azure Cloud Services
+# -----------------------------------------------------------------------------
+azure-ai-documentintelligence==1.0.2  # Azure Document Intelligence (Form Recognizer) OCR/extraction
+azure-identity==1.25.1                # Azure authentication (managed identity, service principal, etc.)
+azure-storage-blob==12.28.0           # Azure Blob Storage client
+azure-search-documents==11.6.0        # Azure AI Search (vector + keyword hybrid search) client
+
+
+# -----------------------------------------------------------------------------
+# Google Cloud Services
+# -----------------------------------------------------------------------------
+## Google Drive integration
+google-api-python-client        # Google Workspace APIs client (Drive, Sheets, etc.)
+google-auth-httplib2            # Google auth transport for httplib2
+google-auth-oauthlib            # Google OAuth 2.0 flow helpers
+
+googleapis-common-protos==1.72.0  # Shared protobuf types for Google APIs
+google-cloud-storage==3.9.0       # Google Cloud Storage (GCS) client
+
+
+# -----------------------------------------------------------------------------
+# Databases — Extended Backends
+# -----------------------------------------------------------------------------
+pymongo                         # MongoDB async/sync client
+psycopg2-binary==2.9.11         # PostgreSQL driver (binary wheel, no build deps required)
+pgvector==0.4.2                 # pgvector extension support for PostgreSQL vector similarity search
+
+PyMySQL==1.1.2                  # Pure-Python MySQL/MariaDB driver
+boto3==1.42.44                  # AWS SDK — S3, DynamoDB, and other AWS services
+
+pymilvus==2.6.8                 # Milvus vector database client
+qdrant-client==1.16.2           # Qdrant vector database client
+elasticsearch==9.3.0            # Elasticsearch 9.x client
+pinecone==6.0.2                 # Pinecone managed vector database client
+oracledb==3.4.2                 # Oracle Database thin client (no Oracle Instant Client needed)
+
+playwright==1.58.0              # Browser automation for JS-rendered web scraping
+                                # CAUTION: version must match docker-compose.playwright.yaml
+
+av==14.0.1                      # PyAV — FFmpeg bindings for audio/video processing
+                                # CAUTION: pinned to avoid FATAL FIPS SELFTEST FAILURE (#15720)
+
+colbert-ai==0.2.22              # ColBERT late-interaction retrieval model for RAG re-ranking
+
+
+# -----------------------------------------------------------------------------
+# Testing
+# -----------------------------------------------------------------------------
+docker~=7.1.0                   # Docker SDK — spin up containers in integration tests
+pytest~=8.4.1                   # Test framework
+pytest-docker~=3.2.5            # pytest plugin — manage Docker services during test runs
+
+
+# -----------------------------------------------------------------------------
+# LDAP / Directory Services
+# -----------------------------------------------------------------------------
+ldap3==2.9.1                    # Pure-Python LDAP3 client for Active Directory / LDAP auth
+
+
+# -----------------------------------------------------------------------------
+# Web Crawling
+# -----------------------------------------------------------------------------
+firecrawl-py==4.14.0            # Firecrawl API client — structured web scraping and crawling
+
+
+# -----------------------------------------------------------------------------
+# Observability & Tracing (OpenTelemetry)
+# -----------------------------------------------------------------------------
+opentelemetry-api==1.39.1                           # OTel API — spans, metrics, context propagation
+opentelemetry-sdk==1.39.1                           # OTel SDK — exporter pipeline and resource detection
+opentelemetry-exporter-otlp==1.39.1                 # OTLP exporter (gRPC + HTTP) for Jaeger, Tempo, etc.
+opentelemetry-instrumentation==0.60b1               # Base auto-instrumentation package
+opentelemetry-instrumentation-fastapi==0.60b1       # Auto-instrument FastAPI routes as spans
+opentelemetry-instrumentation-sqlalchemy==0.60b1    # Auto-instrument SQLAlchemy queries
+opentelemetry-instrumentation-redis==0.60b1         # Auto-instrument Redis commands
+opentelemetry-instrumentation-requests==0.60b1      # Auto-instrument requests library calls
+opentelemetry-instrumentation-logging==0.60b1       # Inject trace/span IDs into log records
+opentelemetry-instrumentation-httpx==0.60b1         # Auto-instrument httpx calls
+opentelemetry-instrumentation-aiohttp-client==0.60b1 # Auto-instrument aiohttp client calls
+
+
+# -----------------------------------------------------------------------------
+# CLI & Display
+# -----------------------------------------------------------------------------
+rich>=13.0.0                    # Rich terminal output — startup banner, tables, progress bars

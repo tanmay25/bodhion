@@ -1,0 +1,103 @@
+# docker/docker-compose.yml
+# Bodhion — split-service Docker Compose (backend + nginx frontend).
+#
+# Usage (from project root):
+#   docker compose -f docker/docker-compose.yml up --build -d
+#   docker compose -f docker/docker-compose.yml logs -f
+#   docker compose -f docker/docker-compose.yml down
+#
+# All variables are read from ../.env (project root).
+# Copy .env.default → .env and fill in secrets before first run,
+# or use one of the start scripts in scripts/.
+
+services:
+
+  # ── FastAPI backend (uvicorn) ──────────────────────────────────────────────
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+      args:
+        HTTP_PROXY:  ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY:    ${NO_PROXY:-}
+    image: ${IMAGE_NAME:-bodhion}_backend:${IMAGE_TAG:-latest}
+    container_name: bodhion_backend
+    # Backend is internal-only — not exposed to the host.
+    # nginx proxies /api, /ollama, /openai, /ws, /oauth to this service.
+    expose:
+      - "8080"
+    env_file:
+      - ../.env
+    environment:
+      # Override selected vars for the Docker context
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DOCKER=true
+      - ENV=prod
+      # In Docker, CORS must allow the frontend service origin.
+      # nginx terminates TLS and forwards to Next.js; backend sees its own port.
+      - CORS_ALLOW_ORIGIN=${CORS_ALLOW_ORIGIN:-http://localhost:${BODHION_PORT:-80}}
+    volumes:
+      # Persistent data: SQLite DB, uploads, vector_db, embedding cache
+      - bodhion-backend-data:/app/backend/data
+    networks:
+      - bodhion-net
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        python -c "import json,os,sys,urllib.request;
+        u=urllib.request.urlopen('http://localhost:8080/health', timeout=5);
+        d=json.loads(u.read().decode());
+        sys.exit(0 if d.get('status') is True else 1)"
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # ── Next.js frontend + nginx reverse proxy ─────────────────────────────────
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend.nginx
+      args:
+        HTTP_PROXY:  ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY:    ${NO_PROXY:-}
+    image: ${IMAGE_NAME:-bodhion}_frontend:${IMAGE_TAG:-latest}
+    container_name: bodhion_frontend
+    ports:
+      # Host port (default 80) → nginx container port 80.
+      # Change BODHION_PORT in .env to use a different host port.
+      - "${BODHION_PORT:-80}:80"
+    env_file:
+      - ../.env
+    environment:
+      # In Docker, the Next.js server doesn't need NEXT_PUBLIC_API_URL because
+      # nginx handles the backend proxying before requests reach Next.js.
+      - NEXT_PUBLIC_API_URL=
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - bodhion-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+
+# ── Named volumes ──────────────────────────────────────────────────────────────
+volumes:
+  # Persistent backend data: SQLite DB, file uploads, vector DB, model cache.
+  # Data survives container rebuilds and restarts.
+  bodhion-backend-data:
+    driver: local
+
+# ── Internal network ───────────────────────────────────────────────────────────
+networks:
+  bodhion-net:
+    driver: bridge

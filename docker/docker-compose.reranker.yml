@@ -1,0 +1,71 @@
+# docker/docker-compose.reranker.yml
+# Bodhion — Option C reranker: HuggingFace Text Embeddings Inference (TEI)
+#
+# Runs a dedicated reranker sidecar that exposes a POST /rerank endpoint
+# compatible with the ExternalReranker in bodhion/retrieval/models/external.py.
+#
+# Usage (from project root):
+#   CPU:
+#     docker compose -f docker/docker-compose.reranker.yml up -d
+#   GPU (NVIDIA):
+#     docker compose -f docker/docker-compose.reranker.yml \
+#       -f docker/docker-compose.reranker.gpu.yml up -d
+#
+# Then set the following in .env (or via the admin Settings page):
+#   RAG_RERANKING_ENGINE=external
+#   RAG_RERANKING_MODEL=BAAI/bge-reranker-v2-m3
+#   RAG_EXTERNAL_RERANKER_URL=http://localhost:8080/rerank
+#   RAG_EXTERNAL_RERANKER_API_KEY=          # leave empty for TEI
+#   RAG_EXTERNAL_RERANKER_TIMEOUT=30
+#
+# To use alongside the main stack add both -f flags:
+#   docker compose \
+#     -f docker/docker-compose.yml \
+#     -f docker/docker-compose.reranker.yml \
+#     up -d
+#
+# Model cache is stored in the named volume "reranker-model-cache" so the
+# model is only downloaded once across container restarts.
+#
+# Alternative models (set RERANKER_MODEL in .env to override):
+#   cross-encoder/ms-marco-MiniLM-L-6-v2    (66 MB,  CPU-friendly)
+#   cross-encoder/ms-marco-MiniLM-L-12-v2   (133 MB, better quality)
+#   BAAI/bge-reranker-v2-m3                 (568 MB, best quality — default)
+#   jinaai/jina-reranker-v2-base-multilingual (multilingual support)
+
+services:
+
+  # ── HuggingFace TEI reranker (CPU) ────────────────────────────────────────
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: bodhion_reranker
+    command: >
+      --model-id ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      --port 80
+      --max-client-batch-size 64
+    ports:
+      # Host port 8080 → container port 80.
+      # Set RAG_EXTERNAL_RERANKER_URL=http://localhost:8080/rerank in .env.
+      - "${RERANKER_PORT:-8080}:80"
+    volumes:
+      # Persist downloaded model weights so they survive restarts.
+      - reranker-model-cache:/data
+    networks:
+      - bodhion-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+
+# ── Named volumes ──────────────────────────────────────────────────────────────
+volumes:
+  reranker-model-cache:
+    driver: local
+
+# ── Network — must match docker-compose.yml so services can reach each other ──
+networks:
+  bodhion-net:
+    driver: bridge

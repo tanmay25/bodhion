@@ -1,0 +1,68 @@
+# docker/Dockerfile.backend
+# FastAPI (uvicorn) backend — python:3.11-slim base.
+# Build context: project root (mti-mindai-main/)
+# Build:   docker build -f docker/Dockerfile.backend -t bodhion_backend .
+# Run via: docker/docker-compose.yml (service: backend)
+
+FROM python:3.11-slim AS base
+
+# ── System dependencies ───────────────────────────────────────────────────────
+# git         — some pip packages fetch via git
+# build-essential, gcc, python3-dev — native extension compilation
+# pandoc      — document conversion used by the retrieval pipeline
+# netcat-openbsd, curl — healthcheck & wait-for-it patterns
+# ffmpeg, libsm6, libxext6 — media/image processing (OpenCV)
+# zstd        — zstandard compression support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    gcc \
+    python3-dev \
+    pandoc \
+    netcat-openbsd \
+    curl \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    zstd \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python dependencies ───────────────────────────────────────────────────────
+WORKDIR /app/backend
+
+COPY backend/requirements.txt ./requirements.txt
+
+# Use uv for fast installs; install torch CPU-only (no CUDA in this image)
+RUN pip install --no-cache-dir uv && \
+    pip install --no-cache-dir 'torch<=2.9.1' torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cpu && \
+    uv pip install --system --no-cache-dir -r requirements.txt
+
+# ── Application source ────────────────────────────────────────────────────────
+# Copy only the backend directory; frontend is served by the nginx container
+COPY backend/ .
+
+# Persistent data directory (mounted as a Docker named volume at runtime)
+RUN mkdir -p /app/backend/data
+
+# ── Runtime configuration ─────────────────────────────────────────────────────
+ENV PYTHONUNBUFFERED=1 \
+    ENV=prod \
+    DOCKER=true \
+    PORT=8080 \
+    HOST=0.0.0.0 \
+    UVICORN_WORKERS=1
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import json,os,sys,urllib.request; \
+        u=urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",\"8080\")}/health', timeout=5); \
+        d=json.loads(u.read().decode()); \
+        sys.exit(0 if d.get('status') is True else 1)"
+
+# Reuse the existing start.sh which handles WEBUI_SECRET_KEY generation,
+# Playwright install guard, and uvicorn launch.
+CMD ["bash", "start.sh"]

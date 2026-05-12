@@ -1,0 +1,187 @@
+<svg width="1600" height="1240" viewBox="0 0 1600 1240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="120" y1="40" x2="1480" y2="1220" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#030816"/>
+      <stop offset="0.52" stop-color="#08172A"/>
+      <stop offset="1" stop-color="#0D2238"/>
+    </linearGradient>
+    <linearGradient id="panelGradient" x1="240" y1="120" x2="1360" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop stop-color="rgba(255,255,255,0.06)"/>
+      <stop offset="1" stop-color="rgba(255,255,255,0.02)"/>
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0068C9"/>
+      <stop offset="1" stop-color="#25D7FF"/>
+    </linearGradient>
+    <linearGradient id="limeGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#76D11A"/>
+      <stop offset="1" stop-color="#C7F23A"/>
+    </linearGradient>
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="26" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0.5  0 0 1 0 0.9  0 0 0 0.22 0"/>
+    </filter>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+    <style>
+      .title { font: 700 40px "Segoe UI", sans-serif; fill: #EAF6FF; letter-spacing: -0.02em; }
+      .subtitle { font: 500 18px "Segoe UI", sans-serif; fill: #8FA9BD; }
+      .eyebrow { font: 700 13px "Segoe UI", sans-serif; fill: #C7F23A; letter-spacing: 0.18em; text-transform: uppercase; }
+      .tab { font: 600 18px "Segoe UI", sans-serif; fill: #8FA9BD; }
+      .tabActive { font: 700 18px "Segoe UI", sans-serif; fill: #EAF6FF; }
+      .cardEyebrow { font: 700 12px "Segoe UI", sans-serif; fill: #25D7FF; letter-spacing: 0.14em; text-transform: uppercase; }
+      .cardTitle { font: 700 24px "Segoe UI", sans-serif; fill: #EAF6FF; }
+      .cardBody { font: 500 15px "Segoe UI", sans-serif; fill: #8FA9BD; }
+      .label { font: 600 14px "Segoe UI", sans-serif; fill: #EAF6FF; }
+      .hint { font: 500 13px "Segoe UI", sans-serif; fill: #8FA9BD; }
+      .pill { font: 700 12px "Segoe UI", sans-serif; fill: #C7F23A; letter-spacing: 0.08em; text-transform: uppercase; }
+      .buttonText { font: 700 16px "Segoe UI", sans-serif; fill: #EAF6FF; }
+      .dangerText { font: 700 14px "Segoe UI", sans-serif; fill: #FFB8B8; }
+      .mini { font: 600 12px "Segoe UI", sans-serif; fill: #8FA9BD; letter-spacing: 0.06em; text-transform: uppercase; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1240" fill="url(#bgGradient)"/>
+  <circle cx="1320" cy="140" r="170" fill="#25D7FF" opacity="0.12" filter="url(#softGlow)"/>
+  <circle cx="240" cy="1060" r="180" fill="#76D11A" opacity="0.08" filter="url(#softGlow)"/>
+
+  <rect x="72" y="56" width="1456" height="1128" rx="36" fill="rgba(255,255,255,0.02)" stroke="rgba(80,160,220,0.18)"/>
+
+  <rect x="112" y="96" width="1376" height="188" rx="30" fill="#08172A" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="112" y="96" width="1376" height="188" rx="30" fill="url(#panelGradient)"/>
+  <rect x="148" y="132" width="170" height="34" rx="17" fill="rgba(118,209,26,0.08)" stroke="rgba(199,242,58,0.24)"/>
+  <text x="176" y="154" class="eyebrow">MindAI Admin</text>
+  <text x="148" y="212" class="title">Documents</text>
+  <text x="148" y="244" class="subtitle">Premium redesign concept derived from the current Open WebUI Documents settings: processing, retrieval, files, integrations, and maintenance.</text>
+
+  <rect x="1148" y="132" width="132" height="96" rx="22" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="1176" y="160" class="mini">Extraction</text>
+  <text x="1176" y="198" class="cardTitle" font-size="28">8</text>
+  <text x="1176" y="222" class="hint">engine modes</text>
+
+  <rect x="1298" y="132" width="150" height="96" rx="22" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="1326" y="160" class="mini">Surface</text>
+  <text x="1326" y="198" class="cardTitle" font-size="28">4</text>
+  <text x="1326" y="222" class="hint">sub-tabs</text>
+
+  <rect x="112" y="316" width="1376" height="74" rx="24" fill="#08172A" stroke="rgba(80,160,220,0.18)"/>
+
+  <rect x="136" y="334" width="258" height="38" rx="19" fill="url(#accentGradient)" opacity="0.92"/>
+  <circle cx="164" cy="353" r="6" fill="#EAF6FF"/>
+  <text x="182" y="359" class="tabActive">Processing</text>
+
+  <rect x="410" y="334" width="212" height="38" rx="19" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <circle cx="438" cy="353" r="6" fill="#8FA9BD"/>
+  <text x="456" y="359" class="tab">Retrieval</text>
+
+  <rect x="638" y="334" width="316" height="38" rx="19" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <circle cx="666" cy="353" r="6" fill="#8FA9BD"/>
+  <text x="684" y="359" class="tab">Files &amp; Integrations</text>
+
+  <rect x="970" y="334" width="228" height="38" rx="19" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <circle cx="998" cy="353" r="6" fill="#8FA9BD"/>
+  <text x="1016" y="359" class="tab">Maintenance</text>
+
+  <rect x="1218" y="334" width="246" height="38" rx="19" fill="rgba(118,209,26,0.08)" stroke="rgba(199,242,58,0.24)"/>
+  <text x="1250" y="358" class="pill">Current view: Processing</text>
+
+  <g filter="url(#cardShadow)">
+    <rect x="112" y="422" width="660" height="300" rx="28" fill="#0D2238" stroke="rgba(80,160,220,0.18)"/>
+    <rect x="112" y="422" width="660" height="300" rx="28" fill="url(#panelGradient)"/>
+  </g>
+  <text x="148" y="464" class="cardEyebrow">Processing</text>
+  <text x="148" y="500" class="cardTitle">Content Extraction</text>
+  <text x="148" y="530" class="cardBody">Starts with the existing extraction engine selector, then reveals the matching engine-specific settings already present in the current Documents tab.</text>
+
+  <rect x="148" y="556" width="588" height="56" rx="18" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="174" y="579" class="mini">Engine</text>
+  <text x="174" y="601" class="label">Content Extraction Engine</text>
+  <rect x="542" y="570" width="168" height="28" rx="14" fill="rgba(37,215,255,0.12)" stroke="rgba(37,215,255,0.32)"/>
+  <text x="586" y="589" class="pill">Docling</text>
+
+  <rect x="148" y="630" width="284" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="174" y="653" class="mini">Inline</text>
+  <text x="174" y="675" class="label">Server URL + API Key</text>
+
+  <rect x="452" y="630" width="284" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="478" y="653" class="mini">Advanced</text>
+  <text x="478" y="675" class="label">JSON Parameters Accordion</text>
+
+  <g filter="url(#cardShadow)">
+    <rect x="796" y="422" width="692" height="300" rx="28" fill="#0D2238" stroke="rgba(80,160,220,0.18)"/>
+    <rect x="796" y="422" width="692" height="300" rx="28" fill="url(#panelGradient)"/>
+  </g>
+  <text x="832" y="464" class="cardEyebrow">Processing</text>
+  <text x="832" y="500" class="cardTitle">Ingestion Mode &amp; Chunking</text>
+  <text x="832" y="530" class="cardBody">Keeps the current bypass toggle, splitter options, markdown-header splitter, and chunk size controls together so ingestion behavior is easy to reason about.</text>
+
+  <rect x="832" y="556" width="620" height="66" rx="18" fill="rgba(0,104,201,0.12)" stroke="rgba(37,215,255,0.24)"/>
+  <text x="860" y="579" class="mini">Mode</text>
+  <text x="860" y="603" class="label">Bypass Embedding and Retrieval</text>
+  <rect x="1358" y="572" width="64" height="32" rx="16" fill="url(#limeGradient)"/>
+  <circle cx="1404" cy="588" r="12" fill="#08172A"/>
+
+  <rect x="832" y="642" width="196" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="858" y="665" class="mini">Splitter</text>
+  <text x="858" y="687" class="label">Text Splitter</text>
+
+  <rect x="1044" y="642" width="196" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="1070" y="665" class="mini">Chunking</text>
+  <text x="1070" y="687" class="label">Chunk Size</text>
+
+  <rect x="1256" y="642" width="196" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="1282" y="665" class="mini">Chunking</text>
+  <text x="1282" y="687" class="label">Chunk Overlap</text>
+
+  <g filter="url(#cardShadow)">
+    <rect x="112" y="750" width="660" height="304" rx="28" fill="#0D2238" stroke="rgba(80,160,220,0.18)"/>
+    <rect x="112" y="750" width="660" height="304" rx="28" fill="url(#panelGradient)"/>
+  </g>
+  <text x="148" y="792" class="cardEyebrow">Processing</text>
+  <text x="148" y="828" class="cardTitle">Embedding</text>
+  <text x="148" y="858" class="cardBody">Preserves the current embedding engine and provider credential flows, while separating them into a dedicated card instead of burying them deep in a single long form.</text>
+
+  <rect x="148" y="884" width="588" height="56" rx="18" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="174" y="907" class="mini">Provider</text>
+  <text x="174" y="929" class="label">Embedding Model Engine</text>
+  <rect x="534" y="898" width="176" height="28" rx="14" fill="rgba(37,215,255,0.12)" stroke="rgba(37,215,255,0.32)"/>
+  <text x="572" y="917" class="pill">Azure OpenAI</text>
+
+  <rect x="148" y="956" width="284" height="64" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="174" y="979" class="mini">Model</text>
+  <text x="174" y="1003" class="label">Embedding Model</text>
+
+  <rect x="452" y="956" width="134" height="64" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="478" y="979" class="mini">Performance</text>
+  <text x="478" y="1003" class="label">Batch Size</text>
+
+  <rect x="606" y="956" width="130" height="64" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="632" y="979" class="mini">Async</text>
+  <text x="632" y="1003" class="label">Concurrent</text>
+
+  <g filter="url(#cardShadow)">
+    <rect x="796" y="750" width="692" height="304" rx="28" fill="#0D2238" stroke="rgba(80,160,220,0.18)"/>
+    <rect x="796" y="750" width="692" height="304" rx="28" fill="url(#panelGradient)"/>
+  </g>
+  <text x="832" y="792" class="cardEyebrow">Future Sub-Tabs</text>
+  <text x="832" y="828" class="cardTitle">Retrieval, Files &amp; Maintenance Preview</text>
+  <text x="832" y="858" class="cardBody">The remaining sub-tabs use the same card system: retrieval mode and reranking, upload limits and integrations, then destructive actions isolated in a maintenance area.</text>
+
+  <rect x="832" y="890" width="620" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="858" y="913" class="mini">Retrieval</text>
+  <text x="858" y="935" class="label">RAG Full Context, Hybrid Search, Reranker, Top K, Template</text>
+
+  <rect x="832" y="964" width="620" height="58" rx="18" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="858" y="987" class="mini">Files &amp; Integrations</text>
+  <text x="858" y="1009" class="label">Extensions, upload limits, image compression, Google Drive, OneDrive</text>
+
+  <rect x="832" y="1038" width="620" height="58" rx="18" fill="rgba(255,108,108,0.08)" stroke="rgba(255,108,108,0.24)"/>
+  <text x="858" y="1061" class="mini">Maintenance</text>
+  <text x="858" y="1083" class="dangerText">Reset upload directory, reset vector storage, reindex knowledge base</text>
+
+  <rect x="112" y="1106" width="1376" height="54" rx="20" fill="#08172A" stroke="rgba(80,160,220,0.18)"/>
+  <text x="142" y="1139" class="hint">Sticky footer action bar with section-aware save action and lightweight guidance.</text>
+  <rect x="1280" y="1117" width="172" height="32" rx="16" fill="url(#accentGradient)"/>
+  <text x="1344" y="1138" class="buttonText">Save Changes</text>
+</svg>
