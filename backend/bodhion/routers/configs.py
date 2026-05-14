@@ -14,6 +14,7 @@ from bodhion.config import BannerModel
 from bodhion.utils.tools import (
     get_tool_server_data,
     get_tool_server_url,
+    get_server_protocol,
     set_tool_servers,
     set_terminal_servers,
 )
@@ -142,7 +143,8 @@ async def register_oauth_client(
 class ToolServerConnection(BaseModel):
     url: str
     path: str
-    type: Optional[str] = "openapi"  # openapi, mcp
+    type: Optional[str] = "openapi"  # legacy field — openapi | mcp
+    server_protocol: Optional[str] = None  # canonical field — openapi | mcp
     auth_type: Optional[str]
     headers: Optional[dict | str] = None
     key: Optional[str]
@@ -169,7 +171,7 @@ async def set_tool_servers_config(
     user=Depends(get_admin_user),
 ):
     for connection in request.app.state.config.TOOL_SERVER_CONNECTIONS:
-        server_type = connection.get("type", "openapi")
+        server_type = get_server_protocol(connection)
         auth_type = connection.get("auth_type", "none")
 
         if auth_type == "oauth_2.1":
@@ -190,7 +192,7 @@ async def set_tool_servers_config(
     await set_tool_servers(request)
 
     for connection in request.app.state.config.TOOL_SERVER_CONNECTIONS:
-        server_type = connection.get("type", "openapi")
+        server_type = get_server_protocol(connection)
         if server_type == "mcp":
             server_id = connection.get("info", {}).get("id")
             auth_type = connection.get("auth_type", "none")
@@ -209,6 +211,28 @@ async def set_tool_servers_config(
                 except Exception as e:
                     log.debug(f"Failed to add OAuth client for MCP tool server: {e}")
                     continue
+
+    # Trigger tool discovery for all enabled MCP servers — cache results in Redis
+    from bodhion.utils.tools import get_mcp_tool_specs
+    import asyncio as _asyncio
+
+    redis = getattr(request.app.state, "redis", None)
+
+    async def _discover(conn):
+        srv_id = conn.get("info", {}).get("id")
+        if not srv_id or not conn.get("config", {}).get("enable"):
+            return
+        try:
+            await get_mcp_tool_specs(conn, redis=redis, server_id=srv_id)
+        except Exception as e:
+            log.warning(f"MCP tool discovery failed for server {srv_id} on save: {e}")
+
+    mcp_connections = [
+        c for c in request.app.state.config.TOOL_SERVER_CONNECTIONS
+        if get_server_protocol(c) == "mcp"
+    ]
+    if mcp_connections:
+        await _asyncio.gather(*[_discover(c) for c in mcp_connections], return_exceptions=True)
 
     return {
         "TOOL_SERVER_CONNECTIONS": request.app.state.config.TOOL_SERVER_CONNECTIONS,

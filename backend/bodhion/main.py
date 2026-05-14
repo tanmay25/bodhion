@@ -543,6 +543,10 @@ from bodhion.env import (
     WEBUI_ADMIN_NAME,
     ENABLE_EASTER_EGGS,
     LOG_FORMAT,
+    ENABLE_BUNDLED_MCP_SERVERS,
+    MCP_HEALTH_CHECK_INTERVAL_SECONDS,
+    MCP_HEALTH_HISTORY_RETENTION_DAYS,
+    MCP_SERVER_DOWN_ALERT_THRESHOLD,
 )
 
 
@@ -629,6 +633,112 @@ if LOG_FORMAT != "json":
         url="https://github.com/tanmay-mondal/bodhion",
     )
 
+async def periodic_mcp_health_check(app: FastAPI):
+    """
+    Background task: poll all enabled MCP servers on a fixed interval, write
+    results to mcp_health_log, and maintain a Redis hash of current down-alerts.
+    """
+    import json as _json
+    from bodhion.utils.mcp.client import MCPClient
+    from bodhion.utils.tools import get_server_protocol
+    from bodhion.models.mcp_health_log import McpHealthLogs
+
+    failure_streak: dict[str, int] = {}
+    alerted_servers: set[str] = set()
+
+    while True:
+        await asyncio.sleep(MCP_HEALTH_CHECK_INTERVAL_SECONDS)
+
+        try:
+            connections = list(getattr(app.state.config, "TOOL_SERVER_CONNECTIONS", []))
+        except Exception:
+            continue
+
+        redis = getattr(app.state, "redis", None)
+
+        for conn in connections:
+            if get_server_protocol(conn) != "mcp":
+                continue
+            if not conn.get("config", {}).get("enable", True):
+                continue
+
+            server_id = conn.get("info", {}).get("id", "")
+            server_name = conn.get("info", {}).get("name", server_id)
+            if not server_id:
+                continue
+
+            url = conn.get("url", "")
+            auth_type = conn.get("auth_type", "none")
+            headers: dict = {}
+            if auth_type == "bearer":
+                headers["Authorization"] = f"Bearer {conn.get('key', '')}"
+
+            health_status = "unreachable"
+            latency_ms = None
+            client = MCPClient()
+            try:
+                t0 = time.time()
+                await client.connect(url, headers=headers or None)
+                await client.list_tool_specs()
+                latency_ms = int((time.time() - t0) * 1000)
+                health_status = "ok"
+                failure_streak[server_id] = 0
+
+                if server_id in alerted_servers:
+                    alerted_servers.discard(server_id)
+                    if redis is not None:
+                        try:
+                            await redis.hdel("mcp_alerts", server_id)
+                        except Exception:
+                            pass
+                    log.info(f"[mcp-health] '{server_name}' recovered.")
+
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "401" in msg or "403" in msg or "unauthorized" in msg or "forbidden" in msg:
+                    health_status = "auth_error"
+                streak = failure_streak.get(server_id, 0) + 1
+                failure_streak[server_id] = streak
+
+                if streak >= MCP_SERVER_DOWN_ALERT_THRESHOLD and server_id not in alerted_servers:
+                    alerted_servers.add(server_id)
+                    if redis is not None:
+                        try:
+                            alert = {
+                                "server_id": server_id,
+                                "server_name": server_name,
+                                "status": health_status,
+                                "since": int(time.time()),
+                                "consecutive_failures": streak,
+                            }
+                            await redis.hset("mcp_alerts", server_id, _json.dumps(alert))
+                        except Exception:
+                            pass
+                    log.warning(
+                        f"[mcp-health] '{server_name}' DOWN "
+                        f"(streak={streak}, status={health_status})"
+                    )
+
+            finally:
+                if client.exit_stack is not None:
+                    try:
+                        await client.disconnect()
+                    except Exception:
+                        pass
+
+            McpHealthLogs.write(
+                server_id=server_id,
+                server_name=server_name,
+                status=health_status,
+                latency_ms=latency_ms,
+            )
+
+        try:
+            McpHealthLogs.prune(older_than_days=MCP_HEALTH_HISTORY_RETENTION_DAYS)
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Store reference to main event loop for sync->async calls (e.g., embedding generation)
@@ -681,6 +791,7 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(periodic_usage_pool_cleanup())
     asyncio.create_task(periodic_session_pool_cleanup())
+    asyncio.create_task(periodic_mcp_health_check(app))
 
     if app.state.config.ENABLE_BASE_MODELS_CACHE:
         try:
@@ -705,6 +816,62 @@ async def lifespan(app: FastAPI):
             )
         except Exception as e:
             log.warning(f"Failed to pre-fetch models at startup: {e}")
+
+    # Auto-register bundled MCP servers when ENABLE_BUNDLED_MCP_SERVERS=true.
+    # These services are started via docker compose --profile mcp-bundled.
+    if ENABLE_BUNDLED_MCP_SERVERS:
+        _bundled = [
+            {
+                "url": "http://mcp-filesystem:8000",
+                "type": "mcp",
+                "server_protocol": "mcp",
+                "auth_type": "none",
+                "key": "",
+                "info": {
+                    "id": "bundled-filesystem",
+                    "name": "Filesystem (Bundled)",
+                    "description": "Read and write files in the shared workspace via the bundled MCP server.",
+                    "category": "Files",
+                },
+                "config": {"enable": True, "access_grants": [], "function_name_filter_list": ""},
+            },
+            {
+                "url": "http://mcp-sqlite:8000",
+                "type": "mcp",
+                "server_protocol": "mcp",
+                "auth_type": "none",
+                "key": "",
+                "info": {
+                    "id": "bundled-sqlite",
+                    "name": "SQLite (Bundled)",
+                    "description": "Query and manage the shared SQLite database via the bundled MCP server.",
+                    "category": "Database",
+                },
+                "config": {"enable": True, "access_grants": [], "function_name_filter_list": ""},
+            },
+            {
+                "url": "http://mcp-fetch:8000",
+                "type": "mcp",
+                "server_protocol": "mcp",
+                "auth_type": "none",
+                "key": "",
+                "info": {
+                    "id": "bundled-fetch",
+                    "name": "Web Fetch (Bundled)",
+                    "description": "Fetch and parse web pages via the bundled MCP server.",
+                    "category": "Web",
+                },
+                "config": {"enable": True, "access_grants": [], "function_name_filter_list": ""},
+            },
+        ]
+        _existing_ids = {
+            s.get("info", {}).get("id")
+            for s in app.state.config.TOOL_SERVER_CONNECTIONS
+        }
+        for _srv in _bundled:
+            if _srv["info"]["id"] not in _existing_ids:
+                app.state.config.TOOL_SERVER_CONNECTIONS.append(_srv)
+                log.info(f"[bundled-mcp] Registered {_srv['info']['name']}")
 
     # Pre-fetch tool server specs so the first request doesn't pay the latency cost
     if len(app.state.config.TOOL_SERVER_CONNECTIONS) > 0:

@@ -138,11 +138,212 @@ export const downloadDatabase = (token: string) =>
     headers: { Authorization: `Bearer ${token}` },
   });
 
+// ── MCP Tool Servers ────────────────────────────────────────────────────────────
+
+import type { MCPServerConnection, MCPHealthResult } from '@/types/config';
+
+export const getToolServersConfig = (token: string) =>
+  apiFetch<{ TOOL_SERVER_CONNECTIONS: MCPServerConnection[] }>(
+    `${WEBUI_API_BASE}/configs/tool_servers`, { token }
+  );
+
+export const setToolServersConfig = (
+  token: string,
+  connections: MCPServerConnection[],
+) =>
+  apiFetch<{ TOOL_SERVER_CONNECTIONS: MCPServerConnection[] }>(
+    `${WEBUI_API_BASE}/configs/tool_servers`,
+    { token, method: 'POST', body: { TOOL_SERVER_CONNECTIONS: connections } },
+  );
+
+export const getMcpServerHealth = (token: string, serverId: string) =>
+  apiFetch<MCPHealthResult>(
+    `${WEBUI_API_BASE}/tools/servers/${encodeURIComponent(serverId)}/health`,
+    { token },
+  );
+
 export const getAllUserChats = (token: string) =>
   apiFetch<unknown[]>(`${WEBUI_API_BASE}/chats/all/db`, { token });
 
+// ── MCP Audit Log ──────────────────────────────────────────────────────────────
+
+export interface McpAuditRow {
+  id:           string;
+  user_id:      string | null;
+  server_id:    string | null;
+  server_name:  string | null;
+  tool_name:    string | null;
+  input_summary:string | null;
+  status:       string;
+  error_type:   string | null;
+  latency_ms:   number | null;
+  chat_id:      string | null;
+  timestamp:    number;
+}
+
+export interface McpAuditFilters {
+  user_id?:    string;
+  server_id?:  string;
+  tool_name?:  string;
+  status?:     string;
+  start_time?: number;
+  end_time?:   number;
+  skip?:       number;
+  limit?:      number;
+}
+
+// ── MCP Marketplace Registry ────────────────────────────────────────────────
+
+export interface RegistryServer {
+  id:              string;
+  name:            string;
+  description:     string;
+  category:        string;
+  author:          'community' | 'verified';
+  auth_type:       string;
+  oauth_scopes?:   string[];
+  config_template: Record<string, string>;
+  docs_url?:       string;
+  icon?:           string;
+  tags?:           string[];
+  installed:       boolean;
+  bundled?:        boolean;
+}
+
+export interface RegistryResponse {
+  registry_version: string;
+  servers:          RegistryServer[];
+}
+
+export interface RegistryCategory {
+  category: string;
+  count:    number;
+}
+
+export const getMcpRegistry = (token: string) =>
+  apiFetch<RegistryResponse>(`${WEBUI_API_BASE}/tools/mcp-registry`, { token });
+
+export const getMcpRegistryCategories = (token: string) =>
+  apiFetch<RegistryCategory[]>(`${WEBUI_API_BASE}/tools/mcp-registry/categories`, { token });
+
+export const getMcpAuditLog = (token: string, filters: McpAuditFilters = {}) => {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') params.set(k, String(v));
+  });
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch<{ rows: McpAuditRow[]; total: number }>(
+    `${WEBUI_API_BASE}/tools/audit${qs}`,
+    { token },
+  );
+};
+
 export const getAllUsers = (token: string) =>
   apiFetch<{ users: unknown[] }>(`${WEBUI_API_BASE}/users/all`, { token });
+
+// ── MCP Server Validator ───────────────────────────────────────────────────────
+
+export interface McpValidateResult {
+  ok:          boolean;
+  tool_count:  number;
+  latency_ms:  number;
+  error?:      string;
+}
+
+export const validateMcpServer = (
+  token: string,
+  url: string,
+  auth_type = 'none',
+  key = '',
+) =>
+  apiFetch<McpValidateResult>(`${WEBUI_API_BASE}/tools/servers/validate`, {
+    token,
+    method: 'POST',
+    body: { url, auth_type, key },
+  });
+
+// ── MCP Health History & Alerts ────────────────────────────────────────────────
+
+export interface McpHealthRecord {
+  id:         string;
+  server_id:  string;
+  server_name: string | null;
+  status:     'ok' | 'unreachable' | 'auth_error';
+  latency_ms: number | null;
+  timestamp:  number;
+}
+
+export interface McpHealthHistoryResult {
+  server_id:      string;
+  hours:          number;
+  uptime_7d_pct:  number | null;
+  records:        McpHealthRecord[];
+}
+
+export const getMcpHealthHistory = (token: string, serverId: string, hours = 24) =>
+  apiFetch<McpHealthHistoryResult>(
+    `${WEBUI_API_BASE}/tools/servers/${encodeURIComponent(serverId)}/health-history?hours=${hours}`,
+    { token },
+  );
+
+export interface McpAlert {
+  server_id:            string;
+  server_name:          string | null;
+  status:               string;
+  since:                number;
+  consecutive_failures: number;
+}
+
+export const getMcpAlerts = (token: string) =>
+  apiFetch<{ alerts: McpAlert[] }>(`${WEBUI_API_BASE}/tools/mcp-alerts`, { token });
+
+// ── MCP Analytics ──────────────────────────────────────────────────────────────
+
+export interface McpServerUsageEntry {
+  server_id:      string;
+  server_name:    string | null;
+  total_calls:    number;
+  success_count:  number;
+  error_count:    number;
+  success_rate:   number;
+  avg_latency_ms: number | null;
+  unique_users:   number;
+}
+
+export interface McpToolEntry {
+  tool_name:   string;
+  server_id:   string | null;
+  server_name: string | null;
+  call_count:  number;
+  error_count: number;
+}
+
+export interface McpUserEntry {
+  user_id:     string;
+  user_name:   string | null;
+  user_email:  string | null;
+  server_id:   string | null;
+  server_name: string | null;
+  call_count:  number;
+}
+
+export const getMcpServerAnalytics = (token: string, period = '7d') =>
+  apiFetch<{ servers: McpServerUsageEntry[]; period: string }>(
+    `${WEBUI_API_BASE}/analytics/mcp/servers?period=${period}`,
+    { token },
+  );
+
+export const getMcpToolAnalytics = (token: string, period = '7d', limit = 20) =>
+  apiFetch<{ tools: McpToolEntry[]; period: string }>(
+    `${WEBUI_API_BASE}/analytics/mcp/tools?period=${period}&limit=${limit}`,
+    { token },
+  );
+
+export const getMcpUserAnalytics = (token: string, period = '7d') =>
+  apiFetch<{ rows: McpUserEntry[]; period: string }>(
+    `${WEBUI_API_BASE}/analytics/mcp/users?period=${period}`,
+    { token },
+  );
 
 // ── Evaluations config ─────────────────────────────────────────────────────────
 

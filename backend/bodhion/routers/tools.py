@@ -1,15 +1,18 @@
-﻿import logging
+﻿import json as _json_std
+import logging
 from pathlib import Path
 from typing import Optional
 import time
 import re
 import aiohttp
-from bodhion.env import AIOHTTP_CLIENT_TIMEOUT
+from bodhion.env import AIOHTTP_CLIENT_TIMEOUT, MCP_REGISTRY_URL, STATIC_DIR
 from bodhion.models.groups import Groups
 from pydantic import BaseModel, HttpUrl
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from bodhion.internal.db import get_session
+from bodhion.utils.mcp.client import MCPClient
+from bodhion.utils.mcp.errors import MCPErrorType
 
 
 from bodhion.models.oauth_sessions import OAuthSessions
@@ -31,7 +34,7 @@ from bodhion.utils.plugin import (
 from bodhion.utils.tools import get_tool_specs
 from bodhion.utils.auth import get_admin_user, get_verified_user
 from bodhion.utils.access_control import has_access, has_permission, filter_allowed_access_grants
-from bodhion.utils.tools import get_tool_servers
+from bodhion.utils.tools import get_tool_servers, get_server_protocol
 
 from bodhion.config import CACHE_DIR, BYPASS_ADMIN_ACCESS_CONTROL
 from bodhion.constants import ERROR_MESSAGES
@@ -113,7 +116,7 @@ async def get_tools(
 
     # MCP Tool Servers
     for server in request.app.state.config.TOOL_SERVER_CONNECTIONS:
-        if server.get("type", "openapi") == "mcp" and server.get("config", {}).get(
+        if get_server_protocol(server) == "mcp" and server.get("config", {}).get(
             "enable"
         ):
             server_id = server.get("info", {}).get("id")
@@ -855,3 +858,426 @@ async def update_tools_user_valves_by_id(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
+
+
+############################
+# MCP Server Credentials (per-user)
+############################
+
+
+class McpCredentialForm(BaseModel):
+    api_key: Optional[str] = None
+
+
+@router.get("/servers/{server_id}/credentials/me")
+async def get_mcp_credential(
+    server_id: str,
+    user=Depends(get_verified_user),
+):
+    from bodhion.models.user_mcp_credentials import UserMcpCredentials
+
+    status = UserMcpCredentials.get_credential_status(user.id, server_id)
+    if status is None:
+        return {"server_id": server_id, "connected": False}
+    return status
+
+
+@router.post("/servers/{server_id}/credentials/me")
+async def save_mcp_credential(
+    server_id: str,
+    form_data: McpCredentialForm,
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    from bodhion.models.user_mcp_credentials import UserMcpCredentials
+
+    # Verify the server exists and the user has access
+    connection = next(
+        (
+            conn
+            for conn in request.app.state.config.TOOL_SERVER_CONNECTIONS
+            if get_server_protocol(conn) == "mcp"
+            and conn.get("info", {}).get("id") == server_id
+        ),
+        None,
+    )
+    if connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"MCP server '{server_id}' not found.",
+        )
+
+    auth_type = connection.get("auth_type", "none")
+    if auth_type not in ("bearer", "none"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use the OAuth flow to authenticate this server.",
+        )
+
+    credential = UserMcpCredentials.upsert_credential(
+        user_id=user.id,
+        server_id=server_id,
+        auth_type=auth_type,
+        api_key=form_data.api_key,
+    )
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save credential.",
+        )
+    return {"server_id": server_id, "connected": True, "auth_type": auth_type}
+
+
+@router.delete("/servers/{server_id}/credentials/me")
+async def delete_mcp_credential(
+    server_id: str,
+    user=Depends(get_verified_user),
+):
+    from bodhion.models.user_mcp_credentials import UserMcpCredentials
+
+    deleted = UserMcpCredentials.delete_credential(user.id, server_id)
+    return {"server_id": server_id, "deleted": deleted}
+
+
+############################
+# MCP Server Health Check
+############################
+
+HEALTH_CACHE_TTL = 30  # seconds
+
+
+@router.get("/servers/{server_id}/health")
+async def get_mcp_server_health(
+    request: Request,
+    server_id: str,
+    user=Depends(get_admin_user),
+):
+    """
+    Ping an MCP server's tool discovery endpoint and return health status.
+    Result is cached in Redis for 30 seconds.
+    """
+    redis = getattr(request.app.state, "redis", None)
+    cache_key = f"mcp_health:{server_id}"
+
+    if redis is not None:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                import json
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    # Find the server connection by id
+    connection = next(
+        (
+            conn
+            for conn in request.app.state.config.TOOL_SERVER_CONNECTIONS
+            if get_server_protocol(conn) == "mcp"
+            and conn.get("info", {}).get("id") == server_id
+        ),
+        None,
+    )
+
+    if connection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"MCP server '{server_id}' not found.",
+        )
+
+    url = connection.get("url", "")
+    auth_type = connection.get("auth_type", "none")
+
+    headers = {}
+    if auth_type == "bearer":
+        headers["Authorization"] = f"Bearer {connection.get('key', '')}"
+
+    start_ms = int(time.time() * 1000)
+    health_status = "unreachable"
+    tool_count = 0
+    specs = []
+
+    client = MCPClient()
+    try:
+        await client.connect(url, headers=headers or None)
+        specs = await client.list_tool_specs() or []
+        tool_count = len(specs)
+        health_status = "ok"
+
+        # Cache discovered tool specs (5 min TTL)
+        if redis is not None and specs:
+            import json as _json
+            await redis.set(f"mcp_tools:{server_id}", _json.dumps(specs), ex=300)
+
+    except Exception as e:
+        msg = str(e).lower()
+        if "401" in msg or "403" in msg or "unauthorized" in msg or "forbidden" in msg:
+            health_status = "auth_error"
+        else:
+            health_status = "unreachable"
+    finally:
+        if client.exit_stack is not None:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    latency_ms = int(time.time() * 1000) - start_ms
+    result = {
+        "server_id": server_id,
+        "status": health_status,
+        "latency_ms": latency_ms,
+        "tool_count": tool_count,
+        "checked_at": int(time.time()),
+        "specs": specs,
+    }
+
+    if redis is not None:
+        try:
+            import json as _json
+            # Cache health result without specs to keep payload small
+            cache_payload = {k: v for k, v in result.items() if k != "specs"}
+            await redis.set(cache_key, _json.dumps(cache_payload), ex=HEALTH_CACHE_TTL)
+        except Exception:
+            pass
+
+    return result
+
+
+############################
+# MCP Health History & Alerts
+############################
+
+
+@router.get("/servers/{server_id}/health-history")
+async def get_mcp_health_history(
+    server_id: str,
+    hours: int = 24,
+    user=Depends(get_admin_user),
+):
+    """
+    Return the last N hours of health check records for a server.
+    Used by the admin UI to render sparklines and uptime %.
+    """
+    from bodhion.models.mcp_health_log import McpHealthLogs
+
+    history = McpHealthLogs.get_history(server_id=server_id, hours=hours)
+    uptime = McpHealthLogs.get_uptime_percent(server_id=server_id, days=7)
+    return {
+        "server_id": server_id,
+        "hours": hours,
+        "uptime_7d_pct": uptime,
+        "records": [r.model_dump() for r in history],
+    }
+
+
+@router.get("/mcp-alerts")
+async def get_mcp_alerts(
+    request: Request,
+    user=Depends(get_admin_user),
+):
+    """Return current MCP server down-alerts stored in Redis by the health scheduler."""
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        return {"alerts": []}
+    try:
+        raw = await redis.hgetall("mcp_alerts")
+        alerts = [_json_std.loads(v) for v in (raw or {}).values()]
+        return {"alerts": alerts}
+    except Exception:
+        return {"alerts": []}
+
+
+############################
+# MCP Audit Log
+############################
+
+
+@router.get("/audit")
+async def get_mcp_audit_log(
+    request: Request,
+    user_id: Optional[str] = None,
+    server_id: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    status: Optional[str] = None,
+    start_time: Optional[int] = None,
+    end_time: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+    user=Depends(get_admin_user),
+):
+    from bodhion.models.mcp_audit_log import McpAuditLogs
+
+    rows = McpAuditLogs.query(
+        user_id=user_id,
+        server_id=server_id,
+        tool_name=tool_name,
+        status=status,
+        start_time=start_time,
+        end_time=end_time,
+        skip=skip,
+        limit=min(limit, 500),
+    )
+    total = McpAuditLogs.count(
+        user_id=user_id,
+        server_id=server_id,
+        tool_name=tool_name,
+        status=status,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    return {"rows": [r.model_dump() for r in rows], "total": total}
+
+
+############################
+# MCP Marketplace Registry
+############################
+
+REGISTRY_CACHE_TTL = 3600  # 1 hour
+
+
+async def _load_registry() -> dict:
+    """Load the MCP server registry from URL (if MCP_REGISTRY_URL is set) or the bundled JSON file."""
+    if MCP_REGISTRY_URL:
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.get(MCP_REGISTRY_URL, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+    registry_path = STATIC_DIR / "mcp-registry" / "registry.json"
+    with open(registry_path, "r", encoding="utf-8") as f:
+        return _json_std.load(f)
+
+
+@router.get("/mcp-registry")
+async def get_mcp_registry(
+    request: Request,
+    user=Depends(get_admin_user),
+):
+    """
+    Return the curated MCP server registry merged with current installed state.
+    Cached in Redis for 1 hour. Each entry gains an `installed` boolean and
+    an `installed_server_id` if the server is already in TOOL_SERVER_CONNECTIONS.
+    """
+    redis = getattr(request.app.state, "redis", None)
+    cache_key = "mcp_registry:full"
+
+    if redis is not None:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                return _json_std.loads(cached)
+        except Exception:
+            pass
+
+    try:
+        registry = await _load_registry()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to load MCP registry: {e}",
+        )
+
+    installed_ids: set[str] = {
+        conn.get("info", {}).get("id", "")
+        for conn in request.app.state.config.TOOL_SERVER_CONNECTIONS
+        if get_server_protocol(conn) == "mcp"
+    }
+
+    servers = registry.get("servers", [])
+    for entry in servers:
+        entry["installed"] = entry.get("id", "") in installed_ids
+
+    result = {
+        "registry_version": registry.get("registry_version", ""),
+        "servers": servers,
+    }
+
+    if redis is not None:
+        try:
+            await redis.set(cache_key, _json_std.dumps(result), ex=REGISTRY_CACHE_TTL)
+        except Exception:
+            pass
+
+    return result
+
+
+@router.post("/servers/validate")
+async def validate_mcp_server(
+    request: Request,
+    body: dict,
+    user=Depends(get_admin_user),
+):
+    """Quick connectivity + tool-discovery check for the Add Server form."""
+    from bodhion.utils.mcp.client import MCPClient
+    import time as _time
+
+    url = (body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="url is required")
+
+    headers: dict = {}
+    auth_type = body.get("auth_type", "none")
+    key = (body.get("key") or "").strip()
+    if auth_type == "bearer" and key:
+        headers["Authorization"] = f"Bearer {key}"
+
+    client = MCPClient()
+    try:
+        t0 = _time.monotonic()
+        await client.connect(url, headers=headers or None)
+        latency_ms = int((_time.monotonic() - t0) * 1000)
+        specs = await client.list_tool_specs()
+        return {
+            "ok": True,
+            "tool_count": len(specs) if specs else 0,
+            "latency_ms": latency_ms,
+        }
+    except Exception as exc:
+        msg = str(exc)
+        return {"ok": False, "tool_count": 0, "latency_ms": 0, "error": msg}
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+@router.get("/mcp-registry/categories")
+async def get_mcp_registry_categories(
+    request: Request,
+    user=Depends(get_admin_user),
+):
+    """Return distinct categories with server counts from the registry."""
+    redis = getattr(request.app.state, "redis", None)
+    cache_key = "mcp_registry:categories"
+
+    if redis is not None:
+        try:
+            cached = await redis.get(cache_key)
+            if cached:
+                return _json_std.loads(cached)
+        except Exception:
+            pass
+
+    try:
+        registry = await _load_registry()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to load MCP registry: {e}",
+        )
+
+    counts: dict[str, int] = {}
+    for entry in registry.get("servers", []):
+        cat = entry.get("category", "Custom")
+        counts[cat] = counts.get(cat, 0) + 1
+
+    result = [{"category": k, "count": v} for k, v in sorted(counts.items())]
+
+    if redis is not None:
+        try:
+            await redis.set(cache_key, _json_std.dumps(result), ex=REGISTRY_CACHE_TTL)
+        except Exception:
+            pass
+
+    return result

@@ -149,6 +149,66 @@ export interface ToolServerConfig {
   config?: { enable?: boolean };
 }
 
+export type MCPAuthType = 'none' | 'bearer' | 'oauth_2.1';
+
+export type MCPCategory =
+  | 'Email'
+  | 'Calendar'
+  | 'Dev Tools'
+  | 'Productivity'
+  | 'Database'
+  | 'File System'
+  | 'Search'
+  | 'Custom';
+
+export interface MCPServerInfo {
+  id: string;
+  name: string;
+  description?: string;
+  category?: MCPCategory;
+}
+
+export interface MCPToolSpec {
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  enabled?: boolean;
+}
+
+export interface MCPHealthResult {
+  server_id: string;
+  status: 'ok' | 'unreachable' | 'auth_error';
+  latency_ms: number;
+  tool_count: number;
+  checked_at: number;
+  specs?: MCPToolSpec[];
+}
+
+export interface MCPToolAccessOverride {
+  groups: string[];
+}
+
+export interface MCPRateLimit {
+  calls_per_minute?: number;
+  calls_per_day?: number;
+}
+
+export interface MCPServerConnection {
+  url: string;
+  type: 'mcp';
+  server_protocol: 'mcp';
+  auth_type?: MCPAuthType;
+  key?: string;
+  info: MCPServerInfo;
+  config: {
+    enable: boolean;
+    access_grants?: unknown[];
+    function_name_filter_list?: string;
+    tool_access_overrides?: Record<string, MCPToolAccessOverride>;
+    rate_limit?: MCPRateLimit;
+  };
+}
+
 export interface TerminalServerConfig {
   url: string;
   name?: string;

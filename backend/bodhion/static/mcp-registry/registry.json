@@ -1,0 +1,187 @@
+{
+  "registry_version": "2026-05-14.2",
+  "servers": [
+    {
+      "id": "bundled-filesystem",
+      "name": "Filesystem",
+      "description": "Read and write files in the shared workspace. Bundled with Bodhion — no external URL required.",
+      "category": "Files",
+      "author": "verified",
+      "auth_type": "none",
+      "bundled": true,
+      "config_template": {
+        "url": "http://mcp-filesystem:8000",
+        "path": "/",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "icon": "📁",
+      "tags": ["files", "filesystem", "workspace", "bundled"]
+    },
+    {
+      "id": "bundled-sqlite",
+      "name": "SQLite",
+      "description": "Query and manage a local SQLite database. Bundled with Bodhion — no external URL required.",
+      "category": "Database",
+      "author": "verified",
+      "auth_type": "none",
+      "bundled": true,
+      "config_template": {
+        "url": "http://mcp-sqlite:8000",
+        "path": "/",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+      "icon": "🗃️",
+      "tags": ["database", "sqlite", "sql", "bundled"]
+    },
+    {
+      "id": "bundled-fetch",
+      "name": "Web Fetch",
+      "description": "Fetch and parse web pages and APIs. Bundled with Bodhion — no external URL required.",
+      "category": "Web",
+      "author": "verified",
+      "auth_type": "none",
+      "bundled": true,
+      "config_template": {
+        "url": "http://mcp-fetch:8000",
+        "path": "/",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "icon": "🌐",
+      "tags": ["web", "fetch", "http", "scraping", "bundled"]
+    },
+    {
+      "id": "gmail-mcp",
+      "name": "Gmail",
+      "description": "Read, send, search, and manage Gmail emails. Supports drafts, labels, threads, and attachments.",
+      "category": "Email",
+      "author": "community",
+      "auth_type": "oauth_2.1",
+      "oauth_scopes": ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"],
+      "config_template": {
+        "url": "https://gmail-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "✉️",
+      "tags": ["email", "google", "productivity", "communication"]
+    },
+    {
+      "id": "github-mcp",
+      "name": "GitHub",
+      "description": "Browse repositories, create issues and PRs, search code, manage workflows, and read CI results.",
+      "category": "Dev Tools",
+      "author": "community",
+      "auth_type": "bearer",
+      "config_template": {
+        "url": "https://github-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "🐙",
+      "tags": ["git", "github", "code", "devtools", "ci"]
+    },
+    {
+      "id": "slack-mcp",
+      "name": "Slack",
+      "description": "Send and read messages, search conversations, list channels, and manage Slack workspaces.",
+      "category": "Productivity",
+      "author": "community",
+      "auth_type": "oauth_2.1",
+      "oauth_scopes": ["channels:read", "chat:write", "search:read"],
+      "config_template": {
+        "url": "https://slack-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "💬",
+      "tags": ["slack", "messaging", "productivity", "communication"]
+    },
+    {
+      "id": "google-calendar-mcp",
+      "name": "Google Calendar",
+      "description": "Create, update, and query calendar events. Check availability and manage meeting schedules.",
+      "category": "Calendar",
+      "author": "community",
+      "auth_type": "oauth_2.1",
+      "oauth_scopes": ["https://www.googleapis.com/auth/calendar"],
+      "config_template": {
+        "url": "https://gcal-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "📅",
+      "tags": ["calendar", "google", "scheduling", "productivity"]
+    },
+    {
+      "id": "postgres-mcp",
+      "name": "PostgreSQL",
+      "description": "Execute read-only SQL queries, inspect schema, describe tables, and export query results against a PostgreSQL database.",
+      "category": "Database",
+      "author": "community",
+      "auth_type": "bearer",
+      "config_template": {
+        "url": "https://postgres-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "🐘",
+      "tags": ["database", "postgres", "sql", "data"]
+    },
+    {
+      "id": "notion-mcp",
+      "name": "Notion",
+      "description": "Read and write Notion pages and databases. Search across your workspace and create structured notes.",
+      "category": "Productivity",
+      "author": "community",
+      "auth_type": "bearer",
+      "config_template": {
+        "url": "https://notion-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "📝",
+      "tags": ["notion", "notes", "wiki", "productivity", "knowledge"]
+    },
+    {
+      "id": "linear-mcp",
+      "name": "Linear",
+      "description": "Create, update, and search Linear issues. Manage projects, cycles, and team workflows.",
+      "category": "Dev Tools",
+      "author": "community",
+      "auth_type": "bearer",
+      "config_template": {
+        "url": "https://linear-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "📐",
+      "tags": ["linear", "issues", "project-management", "devtools"]
+    },
+    {
+      "id": "brave-search-mcp",
+      "name": "Brave Search",
+      "description": "Search the web with Brave's privacy-first search engine. Returns structured results with snippets and URLs.",
+      "category": "Search",
+      "author": "community",
+      "auth_type": "bearer",
+      "config_template": {
+        "url": "https://brave-search-mcp.example.com",
+        "path": "/mcp/v1",
+        "server_protocol": "mcp"
+      },
+      "docs_url": "https://github.com/modelcontextprotocol/servers",
+      "icon": "🔍",
+      "tags": ["search", "web", "brave", "research"]
+    }
+  ]
+}

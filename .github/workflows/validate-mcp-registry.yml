@@ -1,0 +1,185 @@
+name: Validate MCP Registry
+
+on:
+  pull_request:
+    paths:
+      - 'backend/bodhion/static/mcp-registry/registry.json'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/bodhion/static/mcp-registry/registry.json'
+
+jobs:
+  validate-registry:
+    name: Validate changed MCP registry entries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install mcp package
+        run: pip install "mcp[cli]>=1.0.0"
+
+      - name: Find changed registry entries
+        id: changed
+        run: |
+          # Diff registry.json against the base branch to find added/modified entries
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          else
+            BASE_REF="HEAD~1"
+          fi
+
+          python - <<'EOF'
+          import json, subprocess, sys, os
+
+          base = os.environ.get("BASE_REF", "HEAD~1")
+          result = subprocess.run(
+              ["git", "diff", base, "--", "backend/bodhion/static/mcp-registry/registry.json"],
+              capture_output=True, text=True,
+          )
+
+          # Load current registry
+          with open("backend/bodhion/static/mcp-registry/registry.json") as f:
+              registry = json.load(f)
+
+          servers_by_id = {s["id"]: s for s in registry.get("servers", [])}
+
+          # Find IDs that appear in the diff (added or changed lines with "id" key)
+          changed_ids = set()
+          for line in result.stdout.splitlines():
+              if line.startswith("+") and '"id"' in line and not line.startswith("+++"):
+                  # Extract the id value from the JSON line
+                  try:
+                      # line looks like: +    "id": "gmail-mcp",
+                      val = line.split('"id"')[1].split('"')[1]
+                      if val in servers_by_id:
+                          changed_ids.add(val)
+                  except Exception:
+                      pass
+
+          if not changed_ids:
+              print("No new or changed server entries detected — skipping validation.")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("ids=\n")
+              sys.exit(0)
+
+          ids_str = " ".join(changed_ids)
+          print(f"Changed server IDs: {ids_str}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"ids={ids_str}\n")
+          EOF
+        env:
+          BASE_REF: ${{ steps.changed.outputs.base_ref }}
+          GITHUB_OUTPUT: ${{ env.GITHUB_OUTPUT }}
+
+      - name: Validate changed servers
+        if: steps.changed.outputs.ids != ''
+        run: |
+          python - <<'EOF'
+          import json, subprocess, sys, os
+
+          ids = os.environ.get("CHANGED_IDS", "").split()
+          if not ids:
+              print("Nothing to validate.")
+              sys.exit(0)
+
+          with open("backend/bodhion/static/mcp-registry/registry.json") as f:
+              registry = json.load(f)
+
+          servers_by_id = {s["id"]: s for s in registry.get("servers", [])}
+
+          failures = []
+          for sid in ids:
+              server = servers_by_id.get(sid)
+              if not server:
+                  print(f"SKIP: {sid} not found in registry")
+                  continue
+
+              url = server.get("config_template", {}).get("url", "")
+              if not url:
+                  print(f"SKIP: {sid} has no config_template.url")
+                  continue
+
+              # Skip bundled servers (they require Docker to be running)
+              if server.get("bundled"):
+                  print(f"SKIP: {sid} is a bundled server — validated separately")
+                  continue
+
+              print(f"\n{'='*56}")
+              print(f"Validating: {server['name']} ({url})")
+              print(f"{'='*56}")
+
+              result = subprocess.run(
+                  [sys.executable, "scripts/validate-mcp-server.py", "--url", url],
+                  capture_output=False,
+              )
+              if result.returncode != 0:
+                  failures.append(sid)
+
+          if failures:
+              print(f"\n❌ Validation failed for: {', '.join(failures)}")
+              sys.exit(1)
+          else:
+              print(f"\n✅ All validated entries passed.")
+          EOF
+        env:
+          CHANGED_IDS: ${{ steps.changed.outputs.ids }}
+
+      - name: Validate registry schema
+        run: |
+          python - <<'EOF'
+          import json, sys
+
+          REQUIRED_FIELDS = ["id", "name", "description", "category", "author",
+                             "auth_type", "config_template"]
+          VALID_AUTH_TYPES = {"none", "bearer", "oauth_2.1"}
+          VALID_CATEGORIES = {
+              "Email", "Calendar", "Dev Tools", "Productivity",
+              "Database", "File System", "Search", "Custom",
+          }
+
+          with open("backend/bodhion/static/mcp-registry/registry.json") as f:
+              registry = json.load(f)
+
+          errors = []
+          seen_ids = set()
+
+          for entry in registry.get("servers", []):
+              eid = entry.get("id", "<unknown>")
+
+              for field in REQUIRED_FIELDS:
+                  if field not in entry:
+                      errors.append(f"{eid}: missing required field '{field}'")
+
+              if eid in seen_ids:
+                  errors.append(f"Duplicate id: '{eid}'")
+              seen_ids.add(eid)
+
+              if entry.get("auth_type") not in VALID_AUTH_TYPES:
+                  errors.append(f"{eid}: invalid auth_type '{entry.get('auth_type')}'")
+
+              if entry.get("category") not in VALID_CATEGORIES:
+                  errors.append(f"{eid}: invalid category '{entry.get('category')}'")
+
+              url = entry.get("config_template", {}).get("url", "")
+              if not url:
+                  errors.append(f"{eid}: config_template.url is empty")
+
+          if errors:
+              print("Registry schema errors:")
+              for e in errors:
+                  print(f"  ✗ {e}")
+              sys.exit(1)
+          else:
+              print(f"✅ Registry schema valid ({len(seen_ids)} entries, no duplicates)")
+          EOF

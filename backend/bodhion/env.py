@@ -870,6 +870,30 @@ else:
 
 
 ####################################
+# MCP MARKETPLACE
+####################################
+
+MCP_REGISTRY_URL = os.environ.get("MCP_REGISTRY_URL", "")
+
+ENABLE_BUNDLED_MCP_SERVERS = (
+    os.environ.get("ENABLE_BUNDLED_MCP_SERVERS", "false").lower() == "true"
+)
+
+####################################
+# MCP OBSERVABILITY
+####################################
+MCP_HEALTH_CHECK_INTERVAL_SECONDS = int(
+    os.environ.get("MCP_HEALTH_CHECK_INTERVAL_SECONDS", "60")
+)
+MCP_HEALTH_HISTORY_RETENTION_DAYS = int(
+    os.environ.get("MCP_HEALTH_HISTORY_RETENTION_DAYS", "7")
+)
+MCP_SERVER_DOWN_ALERT_THRESHOLD = int(
+    os.environ.get("MCP_SERVER_DOWN_ALERT_THRESHOLD", "3")
+)
+
+
+####################################
 # SENTENCE TRANSFORMERS
 ####################################
 

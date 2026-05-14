@@ -1,5 +1,5 @@
 ﻿import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 from bodhion.env import REDIS_KEY_PREFIX
 
 
@@ -137,3 +137,72 @@ class RateLimiter:
             del store[b]
 
         return sum(store.values())
+
+
+class AsyncMcpRateLimiter:
+    """
+    Async rate limiter for MCP tool calls using Redis sorted sets (sliding window).
+    Falls back to allowing all calls when Redis is unavailable.
+
+    Two limits are checked: per-minute and per-day.
+    Returns (is_limited, retry_after_seconds).
+    """
+
+    def __init__(self, redis_client, calls_per_minute: int = 0, calls_per_day: int = 0):
+        self.redis = redis_client
+        self.calls_per_minute = calls_per_minute
+        self.calls_per_day = calls_per_day
+
+    def _key(self, user_id: str, server_id: str, window: str) -> str:
+        return f"{REDIS_KEY_PREFIX}:mcp_rl:{server_id}:{user_id}:{window}"
+
+    async def check(self, user_id: str, server_id: str) -> Tuple[bool, int]:
+        """
+        Returns (is_rate_limited, retry_after_seconds).
+        If Redis is unavailable, always allows (returns False, 0).
+        """
+        if self.redis is None:
+            return False, 0
+        if not self.calls_per_minute and not self.calls_per_day:
+            return False, 0
+
+        now = time.time()
+        now_ms = int(now * 1000)
+
+        try:
+            if self.calls_per_minute:
+                key = self._key(user_id, server_id, "min")
+                window_start = now_ms - 60_000
+                await self.redis.zremrangebyscore(key, "-inf", window_start)
+                count = await self.redis.zcard(key)
+                if count >= self.calls_per_minute:
+                    oldest = await self.redis.zrange(key, 0, 0, withscores=True)
+                    if oldest:
+                        oldest_ms = oldest[0][1]
+                        retry = max(1, int((oldest_ms + 60_000 - now_ms) / 1000))
+                    else:
+                        retry = 60
+                    return True, retry
+                await self.redis.zadd(key, {str(now_ms): now_ms})
+                await self.redis.expire(key, 120)
+
+            if self.calls_per_day:
+                key = self._key(user_id, server_id, "day")
+                window_start = now_ms - 86_400_000
+                await self.redis.zremrangebyscore(key, "-inf", window_start)
+                count = await self.redis.zcard(key)
+                if count >= self.calls_per_day:
+                    oldest = await self.redis.zrange(key, 0, 0, withscores=True)
+                    if oldest:
+                        oldest_ms = oldest[0][1]
+                        retry = max(1, int((oldest_ms + 86_400_000 - now_ms) / 1000))
+                    else:
+                        retry = 3600
+                    return True, retry
+                await self.redis.zadd(key, {str(now_ms): now_ms})
+                await self.redis.expire(key, 90_000)
+
+        except Exception:
+            return False, 0
+
+        return False, 0

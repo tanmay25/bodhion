@@ -4,6 +4,7 @@ import re
 import inspect
 import aiohttp
 import asyncio
+import time
 import yaml
 import json
 
@@ -87,6 +88,11 @@ from bodhion.tools.builtin import (
 import copy
 
 log = logging.getLogger(__name__)
+
+
+def get_server_protocol(server: dict) -> str:
+    """Normalize server protocol from 'server_protocol' (new) or legacy 'type' field."""
+    return server.get("server_protocol", server.get("type", "openapi"))
 
 
 def get_async_tool_function_and_apply_extra_params(
@@ -393,6 +399,155 @@ async def get_tools(
                             function_name = f"{server_id}_{function_name}"
 
                         tools_dict[function_name] = tool_dict
+
+                elif type == "mcp":
+                    mcp_connection = next(
+                        (
+                            conn
+                            for conn in request.app.state.config.TOOL_SERVER_CONNECTIONS
+                            if get_server_protocol(conn) == "mcp"
+                            and conn.get("info", {}).get("id") == server_id
+                            and conn.get("config", {}).get("enable")
+                        ),
+                        None,
+                    )
+
+                    if mcp_connection is None:
+                        log.warning(f"MCP server not found or disabled for id: {server_id}")
+                        continue
+
+                    if not has_connection_access(user, mcp_connection, user_group_ids):
+                        log.warning(f"Access denied to MCP server {server_id} for user {user.id}")
+                        continue
+
+                    auth_type = mcp_connection.get("auth_type", "none")
+                    session_token = None
+                    if auth_type == "oauth_2.1":
+                        session_token = await request.app.state.oauth_client_manager.get_oauth_token(
+                            user.id, f"mcp:{server_id}"
+                        )
+
+                    redis = getattr(request.app.state, "redis", None)
+                    specs = await get_mcp_tool_specs(
+                        mcp_connection,
+                        session_token=session_token,
+                        redis=redis,
+                        server_id=server_id,
+                    )
+
+                    mcp_config = mcp_connection.get("config", {})
+                    function_name_filter_list = mcp_config.get("function_name_filter_list", "")
+                    if isinstance(function_name_filter_list, str):
+                        function_name_filter_list = function_name_filter_list.split(",")
+
+                    tool_access_overrides: Dict[str, Any] = mcp_config.get("tool_access_overrides") or {}
+                    rate_limit_cfg: Dict[str, Any] = mcp_config.get("rate_limit") or {}
+                    server_name = mcp_connection.get("info", {}).get("name", server_id)
+
+                    for spec in specs:
+                        function_name = spec["name"]
+
+                        if function_name_filter_list:
+                            if not is_string_allowed(function_name, function_name_filter_list):
+                                continue
+
+                        # Tool-level access override check
+                        if function_name in tool_access_overrides:
+                            allowed_groups = tool_access_overrides[function_name].get("groups", [])
+                            # Empty list means nobody can call this tool
+                            if not allowed_groups:
+                                log.debug(f"Tool {function_name} on server {server_id} is blocked by tool_access_overrides")
+                                continue
+                            # "*" or "all" means everyone; otherwise check group membership
+                            if allowed_groups != ["*"] and allowed_groups != ["all"]:
+                                if not user_group_ids.intersection(set(allowed_groups)):
+                                    log.debug(f"User {user.id} not in allowed groups for tool {function_name}")
+                                    continue
+
+                        def make_mcp_tool_function(fn_name, conn, token, uid, rds, srv_id, srv_name, rl_cfg):
+                            async def mcp_tool_function(**kwargs):
+                                from bodhion.utils.rate_limit import AsyncMcpRateLimiter
+                                from bodhion.utils.mcp.errors import MCPToolError, MCPErrorType
+                                from bodhion.models.mcp_audit_log import McpAuditLogs
+
+                                # Rate limit check
+                                cpm = rl_cfg.get("calls_per_minute", 0)
+                                cpd = rl_cfg.get("calls_per_day", 0)
+                                if uid and (cpm or cpd):
+                                    limiter = AsyncMcpRateLimiter(rds, cpm, cpd)
+                                    limited, retry = await limiter.check(uid, srv_id)
+                                    if limited:
+                                        raise MCPToolError(
+                                            MCPErrorType.RATE_LIMITED,
+                                            f"Rate limit exceeded for MCP server '{srv_name}'. "
+                                            f"Retry after {retry} seconds.",
+                                            retry_after_seconds=retry,
+                                        )
+
+                                # Audit context
+                                input_summary = str(kwargs)[:300] if kwargs else None
+                                start_ms = int(time.time() * 1000)
+                                status, error_type = "success", None
+                                try:
+                                    result = await execute_mcp_tool(
+                                        conn, fn_name, kwargs,
+                                        session_token=token,
+                                        user_id=uid,
+                                    )
+                                except MCPToolError as e:
+                                    status, error_type = "error", e.error_type.value
+                                    raise
+                                except Exception as e:
+                                    status, error_type = "error", "unknown"
+                                    raise
+                                finally:
+                                    latency_ms = int(time.time() * 1000) - start_ms
+                                    try:
+                                        McpAuditLogs.write(
+                                            user_id=uid,
+                                            server_id=srv_id,
+                                            server_name=srv_name,
+                                            tool_name=fn_name,
+                                            status=status,
+                                            latency_ms=latency_ms,
+                                            input_summary=input_summary,
+                                            error_type=error_type,
+                                        )
+                                    except Exception as _ae:
+                                        log.debug(f"Audit log write failed: {_ae}")
+
+                                if isinstance(result, list):
+                                    parts = [
+                                        item.get("text", str(item))
+                                        for item in result
+                                        if isinstance(item, dict)
+                                    ]
+                                    return "\n".join(parts) if parts else str(result)
+                                return result
+
+                            return mcp_tool_function
+
+                        tool_function = make_mcp_tool_function(
+                            function_name, mcp_connection, session_token, user.id,
+                            redis, server_id, server_name, rate_limit_cfg,
+                        )
+                        callable = get_async_tool_function_and_apply_extra_params(
+                            tool_function, {}
+                        )
+
+                        tool_dict = {
+                            "tool_id": tool_id,
+                            "callable": callable,
+                            "spec": clean_openai_tool_schema(spec),
+                            "type": "mcp",
+                        }
+
+                        fn_key = function_name
+                        while fn_key in tools_dict:
+                            log.warning(f"MCP tool {fn_key} already exists; prefixing with server id")
+                            fn_key = f"{server_id}_{fn_key}"
+
+                        tools_dict[fn_key] = tool_dict
 
                 else:
                     continue
@@ -1102,7 +1257,7 @@ async def get_tool_servers_data(servers: List[Dict[str, Any]]) -> List[Dict[str,
     for idx, server in enumerate(servers):
         if (
             server.get("config", {}).get("enable")
-            and server.get("type", "openapi") == "openapi"
+            and get_server_protocol(server) == "openapi"
         ):
             info = server.get("info", {})
 
@@ -1324,3 +1479,122 @@ def get_tool_server_url(url: Optional[str], path: str) -> str:
         # Ensure the path starts with a slash
         path = f"/{path}"
     return f"{url}{path}"
+
+
+async def execute_mcp_tool(
+    connection: Dict[str, Any],
+    function_name: str,
+    params: Dict[str, Any],
+    session_token: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> Any:
+    """Execute a single tool call against an MCP server and return the result content."""
+    from bodhion.utils.mcp.client import MCPClient
+    from bodhion.utils.mcp.errors import MCPToolError, MCPErrorType
+
+    url = connection.get("url", "")
+    auth_type = connection.get("auth_type", "none")
+    server_id = connection.get("info", {}).get("id", "")
+
+    headers: Dict[str, str] = {}
+    if auth_type == "bearer":
+        # User's personal stored key takes precedence over the admin-level key.
+        resolved_key = connection.get("key", "")
+        if user_id and server_id:
+            try:
+                from bodhion.models.user_mcp_credentials import UserMcpCredentials
+                user_key = UserMcpCredentials.get_decrypted_api_key(user_id, server_id)
+                if user_key:
+                    resolved_key = user_key
+            except Exception as _e:
+                log.warning(f"Could not load user MCP key for {user_id}/{server_id}: {_e}")
+        if resolved_key:
+            headers["Authorization"] = f"Bearer {resolved_key}"
+    elif auth_type == "oauth_2.1":
+        token = session_token
+        if not token and user_id and server_id:
+            # Fall back to tokens stored in user_mcp_credential table.
+            try:
+                from bodhion.models.user_mcp_credentials import UserMcpCredentials
+                stored = UserMcpCredentials.get_decrypted_oauth_tokens(user_id, server_id)
+                if stored:
+                    expires_at = stored.get("expires_at")
+                    if expires_at and int(time.time()) >= int(expires_at):
+                        log.warning(
+                            f"MCP OAuth token expired for user={user_id} server={server_id}. "
+                            "User must re-authenticate via Connected Services."
+                        )
+                    else:
+                        token = stored.get("access_token")
+            except Exception as _e:
+                log.warning(f"Could not load user MCP OAuth tokens for {user_id}/{server_id}: {_e}")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+    server_name = connection.get("info", {}).get("name", server_id)
+    client = MCPClient()
+    try:
+        await client.connect(url, headers=headers or None)
+        result = await client.call_tool(
+            function_name,
+            params,
+            server_id=server_id,
+            server_name=server_name,
+            user_id=user_id or "",
+        )
+        return result
+    except MCPToolError:
+        raise
+    except Exception as e:
+        raise MCPToolError(MCPErrorType.NETWORK, str(e))
+    finally:
+        if client.exit_stack is not None:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+
+async def get_mcp_tool_specs(
+    connection: Dict[str, Any],
+    session_token: Optional[str] = None,
+    redis=None,
+    server_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch MCP tool specs, reading from Redis cache when available."""
+    from bodhion.utils.mcp.client import MCPClient
+
+    if redis is not None and server_id:
+        try:
+            cached = await redis.get(f"mcp_tools:{server_id}")
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    url = connection.get("url", "")
+    auth_type = connection.get("auth_type", "none")
+
+    headers: Dict[str, str] = {}
+    if auth_type == "bearer":
+        headers["Authorization"] = f"Bearer {connection.get('key', '')}"
+    elif auth_type == "oauth_2.1" and session_token:
+        headers["Authorization"] = f"Bearer {session_token}"
+
+    client = MCPClient()
+    specs: List[Dict[str, Any]] = []
+    try:
+        await client.connect(url, headers=headers or None)
+        specs = await client.list_tool_specs() or []
+        if redis is not None and server_id and specs:
+            await redis.set(f"mcp_tools:{server_id}", json.dumps(specs), ex=300)
+    except Exception as e:
+        log.warning(f"Failed to fetch MCP tool specs for {server_id}: {e}")
+    finally:
+        if client.exit_stack is not None:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    return specs

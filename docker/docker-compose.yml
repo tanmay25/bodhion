@@ -90,11 +90,70 @@ services:
       start_period: 45s
       retries: 3
 
+  # ── Bundled MCP Servers (opt-in, profile: mcp-bundled) ────────────────────────
+  # Start bundled servers alongside the main stack:
+  #   docker compose -f docker/docker-compose.yml --profile mcp-bundled up -d
+  # Set ENABLE_BUNDLED_MCP_SERVERS=true in .env so the backend auto-registers them.
+  # All three services use supergateway to expose stdio MCP servers as streamable HTTP.
+
+  mcp-filesystem:
+    image: node:22-alpine
+    command: >
+      sh -c "npx -y supergateway
+        --stdio 'npx -y @modelcontextprotocol/server-filesystem /data/workspace'
+        --port 8000 --host 0.0.0.0"
+    expose:
+      - "8000"
+    volumes:
+      - bodhion-workspace:/data/workspace
+    networks:
+      - bodhion-net
+    profiles:
+      - mcp-bundled
+    restart: unless-stopped
+
+  mcp-sqlite:
+    image: node:22-alpine
+    command: >
+      sh -c "apk add --no-cache python3 py3-pip &&
+        pip3 install uv --break-system-packages -q &&
+        npx -y supergateway
+          --stdio 'uvx mcp-server-sqlite --db-path /data/mcp.db'
+          --port 8000 --host 0.0.0.0"
+    expose:
+      - "8000"
+    volumes:
+      - bodhion-backend-data:/data
+    networks:
+      - bodhion-net
+    profiles:
+      - mcp-bundled
+    restart: unless-stopped
+
+  mcp-fetch:
+    image: node:22-alpine
+    command: >
+      sh -c "apk add --no-cache python3 py3-pip &&
+        pip3 install uv --break-system-packages -q &&
+        npx -y supergateway
+          --stdio 'uvx mcp-server-fetch'
+          --port 8000 --host 0.0.0.0"
+    expose:
+      - "8000"
+    networks:
+      - bodhion-net
+    profiles:
+      - mcp-bundled
+    restart: unless-stopped
+
 # ── Named volumes ──────────────────────────────────────────────────────────────
 volumes:
   # Persistent backend data: SQLite DB, file uploads, vector DB, model cache.
   # Data survives container rebuilds and restarts.
   bodhion-backend-data:
+    driver: local
+  # Workspace volume mounted into the bundled filesystem MCP server.
+  bodhion-workspace:
     driver: local
 
 # ── Internal network ───────────────────────────────────────────────────────────

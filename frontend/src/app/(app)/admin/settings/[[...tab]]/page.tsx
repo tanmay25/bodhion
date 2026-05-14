@@ -24,6 +24,7 @@ const WebSearchTab     = lazy(() => import('@/components/admin/settings/WebSearc
 const PipelinesTab     = lazy(() => import('@/components/admin/settings/PipelinesTab').then(m => ({ default: m.PipelinesTab })));
 const DatabaseTab      = lazy(() => import('@/components/admin/settings/DatabaseTab').then(m => ({ default: m.DatabaseTab })));
 const EvaluationsTab   = lazy(() => import('@/components/admin/settings/EvaluationsSettingsTab').then(m => ({ default: m.EvaluationsSettingsTab })));
+const MCPServersTab    = lazy(() => import('@/components/admin/settings/MCPServersTab').then(m => ({ default: m.MCPServersTab })));
 
 const TABS = [
   { id: 'general',        label: 'General',        Component: GeneralTab },
@@ -38,6 +39,7 @@ const TABS = [
   { id: 'pipelines',      label: 'Pipelines',      Component: PipelinesTab },
   { id: 'database',       label: 'Database',       Component: DatabaseTab },
   { id: 'evaluations',    label: 'Evaluations',    Component: EvaluationsTab },
+  { id: 'mcp-servers',   label: 'MCP Servers',    Component: MCPServersTab },
 ] as const;
 
 function TabSkeleton() {

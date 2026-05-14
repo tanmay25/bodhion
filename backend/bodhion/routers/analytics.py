@@ -2,14 +2,17 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
 import logging
+import time
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 
 from bodhion.models.chat_messages import ChatMessages, ChatMessageModel
 from bodhion.models.chats import Chats
 from bodhion.models.groups import Groups
 from bodhion.models.users import Users
 from bodhion.models.feedbacks import Feedbacks
+from bodhion.models.mcp_audit_log import McpAuditLog
 from bodhion.utils.auth import get_admin_user
 from bodhion.internal.db import get_session
 from sqlalchemy.orm import Session
@@ -460,3 +463,222 @@ async def get_model_overview(
     ]
 
     return ModelOverviewResponse(history=history, tags=tags)
+
+
+####################
+# MCP Analytics
+####################
+
+
+def _mcp_time_bounds(period: str) -> tuple[int, int]:
+    now = int(time.time())
+    if period == "24h":
+        return now - 86400, now
+    if period == "7d":
+        return now - 7 * 86400, now
+    return now - 30 * 86400, now  # "30d" default
+
+
+class McpServerUsageEntry(BaseModel):
+    server_id: str
+    server_name: Optional[str] = None
+    total_calls: int
+    success_count: int
+    error_count: int
+    success_rate: float
+    avg_latency_ms: Optional[float] = None
+    unique_users: int
+
+
+class McpServerUsageResponse(BaseModel):
+    servers: list[McpServerUsageEntry]
+    period: str
+
+
+@router.get("/mcp/servers", response_model=McpServerUsageResponse)
+async def get_mcp_server_analytics(
+    period: str = Query("7d", description="Time window: 24h | 7d | 30d"),
+    user=Depends(get_admin_user),
+    db: Session = Depends(get_session),
+):
+    """Per-server MCP usage: total calls, success rate, avg latency, unique users."""
+    start, end = _mcp_time_bounds(period)
+
+    rows = (
+        db.query(
+            McpAuditLog.server_id,
+            McpAuditLog.server_name,
+            func.count(McpAuditLog.id).label("total"),
+            func.sum(
+                func.cast(McpAuditLog.status == "success", db.bind.dialect.name == "sqlite" and "INTEGER" or "INTEGER")
+            ).label("ok"),
+            func.avg(McpAuditLog.latency_ms).label("avg_lat"),
+            func.count(func.distinct(McpAuditLog.user_id)).label("users"),
+        )
+        .filter(
+            McpAuditLog.timestamp >= start,
+            McpAuditLog.timestamp <= end,
+        )
+        .group_by(McpAuditLog.server_id, McpAuditLog.server_name)
+        .order_by(func.count(McpAuditLog.id).desc())
+        .all()
+    )
+
+    servers = []
+    for r in rows:
+        total = r.total or 0
+        ok = 0
+        # Compute success/error from a separate query (cross-db compatible)
+        ok = (
+            db.query(func.count(McpAuditLog.id))
+            .filter(
+                McpAuditLog.server_id == r.server_id,
+                McpAuditLog.status == "success",
+                McpAuditLog.timestamp >= start,
+                McpAuditLog.timestamp <= end,
+            )
+            .scalar()
+        ) or 0
+        err = total - ok
+        servers.append(
+            McpServerUsageEntry(
+                server_id=r.server_id or "",
+                server_name=r.server_name,
+                total_calls=total,
+                success_count=ok,
+                error_count=err,
+                success_rate=round(100.0 * ok / total, 1) if total else 0.0,
+                avg_latency_ms=round(r.avg_lat, 1) if r.avg_lat is not None else None,
+                unique_users=r.users or 0,
+            )
+        )
+
+    return McpServerUsageResponse(servers=servers, period=period)
+
+
+class McpToolEntry(BaseModel):
+    tool_name: str
+    server_id: Optional[str] = None
+    server_name: Optional[str] = None
+    call_count: int
+    error_count: int
+
+
+class McpToolAnalyticsResponse(BaseModel):
+    tools: list[McpToolEntry]
+    period: str
+
+
+@router.get("/mcp/tools", response_model=McpToolAnalyticsResponse)
+async def get_mcp_tool_analytics(
+    period: str = Query("7d", description="Time window: 24h | 7d | 30d"),
+    limit: int = Query(20, le=100),
+    user=Depends(get_admin_user),
+    db: Session = Depends(get_session),
+):
+    """Top MCP tools by call count."""
+    start, end = _mcp_time_bounds(period)
+
+    rows = (
+        db.query(
+            McpAuditLog.tool_name,
+            McpAuditLog.server_id,
+            McpAuditLog.server_name,
+            func.count(McpAuditLog.id).label("calls"),
+        )
+        .filter(
+            McpAuditLog.timestamp >= start,
+            McpAuditLog.timestamp <= end,
+        )
+        .group_by(McpAuditLog.tool_name, McpAuditLog.server_id, McpAuditLog.server_name)
+        .order_by(func.count(McpAuditLog.id).desc())
+        .limit(limit)
+        .all()
+    )
+
+    tools = []
+    for r in rows:
+        err = (
+            db.query(func.count(McpAuditLog.id))
+            .filter(
+                McpAuditLog.tool_name == r.tool_name,
+                McpAuditLog.server_id == r.server_id,
+                McpAuditLog.status != "success",
+                McpAuditLog.timestamp >= start,
+                McpAuditLog.timestamp <= end,
+            )
+            .scalar()
+        ) or 0
+        tools.append(
+            McpToolEntry(
+                tool_name=r.tool_name or "",
+                server_id=r.server_id,
+                server_name=r.server_name,
+                call_count=r.calls or 0,
+                error_count=err,
+            )
+        )
+
+    return McpToolAnalyticsResponse(tools=tools, period=period)
+
+
+class McpUserEntry(BaseModel):
+    user_id: str
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    server_id: Optional[str] = None
+    server_name: Optional[str] = None
+    call_count: int
+
+
+class McpUserAnalyticsResponse(BaseModel):
+    rows: list[McpUserEntry]
+    period: str
+
+
+@router.get("/mcp/users", response_model=McpUserAnalyticsResponse)
+async def get_mcp_user_analytics(
+    period: str = Query("7d", description="Time window: 24h | 7d | 30d"),
+    limit: int = Query(50, le=200),
+    user=Depends(get_admin_user),
+    db: Session = Depends(get_session),
+):
+    """Per-user MCP usage: who calls which servers, how often."""
+    start, end = _mcp_time_bounds(period)
+
+    rows = (
+        db.query(
+            McpAuditLog.user_id,
+            McpAuditLog.server_id,
+            McpAuditLog.server_name,
+            func.count(McpAuditLog.id).label("calls"),
+        )
+        .filter(
+            McpAuditLog.timestamp >= start,
+            McpAuditLog.timestamp <= end,
+            McpAuditLog.user_id.isnot(None),
+        )
+        .group_by(McpAuditLog.user_id, McpAuditLog.server_id, McpAuditLog.server_name)
+        .order_by(func.count(McpAuditLog.id).desc())
+        .limit(limit)
+        .all()
+    )
+
+    user_ids = list({r.user_id for r in rows if r.user_id})
+    user_info = {u.id: u for u in Users.get_users_by_user_ids(user_ids, db=db)}
+
+    result = []
+    for r in rows:
+        u = user_info.get(r.user_id)
+        result.append(
+            McpUserEntry(
+                user_id=r.user_id or "",
+                user_name=u.name if u else None,
+                user_email=u.email if u else None,
+                server_id=r.server_id,
+                server_name=r.server_name,
+                call_count=r.calls or 0,
+            )
+        )
+
+    return McpUserAnalyticsResponse(rows=result, period=period)
